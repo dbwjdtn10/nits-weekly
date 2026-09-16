@@ -15,6 +15,8 @@
 | 파일 | 역할 |
 |---|---|
 | `ntis_collect.py` | 목록(POST 날짜검색) → 상세(view.do) → 첨부 다운로드(download.do) → PDF/HWP/HWPX/DOCX 텍스트 추출 → `brief/`(자격·대상·규모·기간 구간 발췌) 생성. 로그인/RSS 불필요 |
+| `g2b_collect.py` | 나라장터 입찰공고(용역) — 공공데이터포털 Open API로 지난주 게시분 수집 후 `g2b_keywords.txt`로 1차 필터. `G2B_SERVICE_KEY` 필요 |
+| `g2b_keywords.txt` | 나라장터 1차 필터 포함/제외 키워드 |
 | `discord_post.py` | `out/results.json` + `out/announcements.json`을 Discord 웹훅으로 발송 |
 | `company_profile.md` | **X2R 프로필 + 판정 규칙** — 판정 품질을 좌우하므로 꼼꼼히 유지 |
 | `ROUTINE_PROMPT.md` | 클라우드 routine에 넣는 프롬프트 원본 |
@@ -28,6 +30,8 @@ python ntis_collect.py --days 7                                        # 최근 
 set DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 python discord_post.py --out out --dry-run
 python discord_post.py --out out
+set G2B_SERVICE_KEY=...
+python g2b_collect.py --from 2026-09-07 --to 2026-09-13 --out out/g2b
 ```
 
 ## 클라우드 환경 설정 (routine 실행 전 1회)
@@ -39,8 +43,14 @@ claude.ai/code → 입력창 위 구름 아이콘(환경 이름) → Default 위
   discord.com
   *.discord.com
   *.discordapp.com
+  apis.data.go.kr
   ```
-- **Environment variables**: `DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...`
+- **Environment variables**:
+  ```
+  DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+  G2B_SERVICE_KEY=공공데이터포털 일반 인증키(Decoding)   # https://www.data.go.kr/data/15129394/openapi.do 활용신청(자동승인)
+  ```
+- **Setup script**: `pip install -r requirements.txt`
 
 ## NTIS 사이트 메모 (2026-09 기준)
 - 목록: `POST /rndgate/eg/un/ra/mng.do` — `searchCondition2/3=YYYY-MM-DD`(등록기간), `pageUnit=100`, `pageIndex=n`

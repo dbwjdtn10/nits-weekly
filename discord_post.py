@@ -85,12 +85,17 @@ def trunc(s: str, n: int) -> str:
 
 def build_embed(it: dict, res: dict) -> dict:
     v = res.get("verdict", "부적합")
+    g2b = it.get("source") == "g2b"
     fields = [
-        {"name": "부처 / 공고기관", "value": trunc(f"{it.get('dept','')} / {it.get('agency','')}", 200) or "-", "inline": True},
-        {"name": "접수 ~ 마감", "value": f"{it.get('start','')} ~ {it.get('end','')}  **{it.get('dday','')}**", "inline": True},
+        {"name": "수요기관 / 공고기관" if g2b else "부처 / 공고기관", "value": trunc(f"{it.get('dept','')} / {it.get('agency','')}", 200) or "-", "inline": True},
+        {"name": "입찰마감" if g2b else "접수 ~ 마감", "value": (f"{it.get('end','')}  **{it.get('dday','')}**" if g2b else f"{it.get('start','')} ~ {it.get('end','')}  **{it.get('dday','')}**"), "inline": True},
     ]
     if it.get("budget"):
-        fields.append({"name": "지원규모", "value": trunc(it["budget"], 100), "inline": True})
+        fields.append({"name": "금액" if g2b else "지원규모", "value": trunc(it["budget"], 100), "inline": True})
+    if g2b:
+        info = " | ".join(x for x in [it.get("type"), it.get("form"), it.get("method"), f"지역제한 {it['region_limit']}" if it.get("region_limit") else ""] if x)
+        if info:
+            fields.append({"name": "구분", "value": trunc(info, 200), "inline": False})
     if it.get("program"):
         fields.append({"name": "사업명", "value": trunc(it["program"], 200), "inline": False})
     if res.get("conditions"):
@@ -98,7 +103,7 @@ def build_embed(it: dict, res: dict) -> dict:
     fields.append({"name": "판정 사유", "value": trunc(res.get("reason", ""), 1000) or "-", "inline": False})
     if res.get("action"):
         fields.append({"name": "제안 액션", "value": trunc(res["action"], 500), "inline": False})
-    links = f"[NTIS 상세]({it['ntis_url']})"
+    links = f"[{'나라장터 상세' if g2b else 'NTIS 상세'}]({it['ntis_url']})"
     if it.get("source_url"):
         links += f" · [원문 공고]({it['source_url']})"
     fields.append({"name": "링크", "value": links, "inline": False})
@@ -107,7 +112,7 @@ def build_embed(it: dict, res: dict) -> dict:
         "url": it["ntis_url"],
         "color": COLOR.get(v, 0x95A5A6),
         "fields": fields,
-        "footer": {"text": f"NTIS {it['uid']} · 공고일 {it.get('announce_date','')}"},
+        "footer": {"text": f"{'나라장터' if g2b else 'NTIS'} {it['uid']} · 공고일 {it.get('announce_date','')}"},
     }
 
 
@@ -118,6 +123,7 @@ def main() -> int:
     ap.add_argument("--no-files", action="store_true")
     ap.add_argument("--no-rejected", action="store_true", help="부적합 공고 요약 목록 생략")
     ap.add_argument("--webhook", default=os.environ.get("DISCORD_WEBHOOK_URL", ""))
+    ap.add_argument("--title", default="NTIS 국가R&D통합공고 주간 리포트", help="헤더 제목")
     a = ap.parse_args()
 
     if not a.webhook and not a.dry_run:
@@ -165,6 +171,10 @@ def main() -> int:
                 else:
                     skipped.append(att["name"])
         embed = build_embed(it, r)
+        url_atts = [att for att in it.get("attachments", []) if att.get("url") and not att.get("path")]
+        if url_atts:
+            embed["fields"].append({"name": "공고문 첨부", "value": trunc("\n".join(f"[{att['name']}]({att['url']})" for att in url_atts[:8]), 1000), "inline": False})
+            skipped = [s_ for s_ in skipped if s_ not in {att["name"] for att in url_atts}]
         if skipped:
             embed["fields"].append({"name": "미첨부(용량초과/실패) — NTIS에서 받기", "value": trunc("\n".join(f"• {s}" for s in skipped), 1000), "inline": False})
         send(a.webhook, {"embeds": [embed], "allowed_mentions": {"parse": []}}, files or None, dry=a.dry_run)
