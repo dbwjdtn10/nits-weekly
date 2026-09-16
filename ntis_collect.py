@@ -35,6 +35,8 @@ from pathlib import Path
 
 import requests
 
+from seen_state import seen_uids
+
 BASE = "https://www.ntis.go.kr"
 LIST_URL = f"{BASE}/rndgate/eg/un/ra/mng.do"
 VIEW_URL = f"{BASE}/rndgate/eg/un/ra/view.do"
@@ -454,7 +456,7 @@ def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str) ->
     (out / "brief").mkdir(parents=True, exist_ok=True)
     (out / "announcements.json").write_text(
         json.dumps(
-            {"range": [date_from, date_to], "collected_at": dt.datetime.now().isoformat(), "items": items},
+            {"range": [date_from, date_to], "source": "ntis", "collected_at": dt.datetime.now().isoformat(), "items": items},
             ensure_ascii=False,
             indent=1,
         ),
@@ -518,6 +520,8 @@ def main() -> int:
     ap.add_argument("--out", default="out")
     ap.add_argument("--no-attach", action="store_true", help="첨부파일 다운로드/추출 생략")
     ap.add_argument("--limit", type=int, help="상세 수집 건수 제한(테스트용)")
+    ap.add_argument("--no-seen", action="store_true", help="state/seen.json 무시(이미 판정한 공고도 수집)")
+    ap.add_argument("--include-closed", action="store_true", help="마감 지난 공고도 수집")
     a = ap.parse_args()
 
     if a.date_from and a.date_to:
@@ -529,6 +533,15 @@ def main() -> int:
     log(f"수집 기간: {date_from} ~ {date_to}  -> {out.resolve()}")
 
     rows = fetch_list(date_from, date_to)
+    n_all = len(rows)
+    if not a.no_seen:
+        seen = seen_uids("ntis")
+        rows = [r for r in rows if r["uid"] not in seen]
+        log(f"이미 판정한 공고 제외: {n_all - len(rows)}건")
+    if not a.include_closed:
+        before = len(rows)
+        rows = [r for r in rows if not dday(r["end"]).startswith("마감")]
+        log(f"마감 지난 공고 제외: {before - len(rows)}건")
     if a.limit:
         rows = rows[: a.limit]
     log(f"상세 수집 대상 {len(rows)}건")

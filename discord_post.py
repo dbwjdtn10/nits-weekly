@@ -121,7 +121,8 @@ def main() -> int:
     ap.add_argument("--out", default="out")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-files", action="store_true")
-    ap.add_argument("--no-rejected", action="store_true", help="부적합 공고 요약 목록 생략")
+    ap.add_argument("--send", default="적합", help="개별 메시지로 보낼 판정 (콤마 구분). 기본: 적합만. 예: 적합,조건부")
+    ap.add_argument("--with-rejected", action="store_true", help="부적합 공고 요약 목록도 발송")
     ap.add_argument("--webhook", default=os.environ.get("DISCORD_WEBHOOK_URL", ""))
     ap.add_argument("--title", default="NTIS 국가R&D통합공고 주간 리포트", help="헤더 제목")
     a = ap.parse_args()
@@ -143,21 +144,31 @@ def main() -> int:
 
     order = {"적합": 0, "조건부": 1, "부적합": 2}
     judged = sorted(results.values(), key=lambda r: (order.get(r.get("verdict"), 9), -float(r.get("score", 0) or 0)))
-    picked = [r for r in judged if r.get("verdict") in ("적합", "조건부")]
+    send_set = {v.strip() for v in a.send.split(",") if v.strip()}
+    picked = [r for r in judged if r.get("verdict") in send_set]
+    n_fit = sum(1 for r in judged if r.get("verdict") == "적합")
+    n_cond = sum(1 for r in judged if r.get("verdict") == "조건부")
     rejected = [r for r in judged if r.get("verdict") == "부적합"]
     unjudged = [u for u in items if u not in results]
 
     # 1) 헤더
     head = (
         f"## 📋 {a.title} ({date_from} ~ {date_to})\n"
-        f"수집 **{len(items)}건** → 🟢 적합 **{sum(1 for r in picked if r['verdict']=='적합')}** · "
-        f"🟡 조건부 **{sum(1 for r in picked if r['verdict']=='조건부')}** · ⚪ 부적합 {len(rejected)}"
+        f"수집 **{len(items)}건** → 🟢 적합 **{n_fit}** · 🟡 조건부 {n_cond} · ⚪ 부적합 {len(rejected)}"
         + (f" · 미판정 {len(unjudged)}" if unjudged else "")
     )
     if res.get("summary"):
         head += f"\n> {trunc(res['summary'], 800)}"
     if not picked:
-        head += "\n\n이번 주는 X2R이 제안 가능한 공고가 없습니다."
+        head += "\n\n이번 주는 X2R이 제안 가능한(적합) 공고가 없습니다."
+    # 조건부는 개별 메시지 대신 헤더에 링크 목록으로만 표시
+    cond = [r for r in judged if r.get("verdict") == "조건부" and "조건부" not in send_set]
+    if cond:
+        head += "\n\n**🟡 조건부 (확인 필요)**\n" + "\n".join(
+            f"• [{trunc(items.get(str(r['uid']), {}).get('title', '?'), 60)}]({items.get(str(r['uid']), {}).get('ntis_url', '')}) — {trunc(r.get('reason', ''), 80)}"
+            for r in cond[:15]
+        )
+        head = trunc(head, 1950)
     send(a.webhook, {"content": head, "allowed_mentions": {"parse": []}}, dry=a.dry_run)
 
     # 2) 적합/조건부 공고: 공고당 메시지 1개 (embed + 첨부)
@@ -186,7 +197,7 @@ def main() -> int:
         log(f"  전송: [{r['verdict']}] {it['title'][:40]} (첨부 {len(files)})")
 
     # 3) 부적합 요약(간략 목록)
-    if rejected and not a.no_rejected:
+    if rejected and a.with_rejected:
         lines = ["**⚪ 부적합으로 판정된 공고**"]
         for r in rejected:
             it = items.get(str(r["uid"]), {})
@@ -204,7 +215,7 @@ def main() -> int:
     if unjudged:
         send(a.webhook, {"content": "⚠️ 미판정: " + ", ".join(f"[{items[u]['title'][:40]}]({items[u]['ntis_url']})" for u in unjudged),
                          "allowed_mentions": {"parse": []}}, dry=a.dry_run)
-    log(f"완료: 적합/조건부 {len(picked)}건 발송, 부적합 {len(rejected)}건 요약")
+    log(f"완료: {'/'.join(sorted(send_set))} {len(picked)}건 발송 (적합 {n_fit}, 조건부 {n_cond}, 부적합 {len(rejected)})")
     return 0
 
 

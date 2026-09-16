@@ -29,6 +29,8 @@ from pathlib import Path
 
 import requests
 
+from seen_state import seen_uids
+
 BASE = "http://apis.data.go.kr/1230000/ad/BidPublicInfoService"
 OPS = {
     "servc": "getBidPblancListInfoServcPPSSrch",   # 용역
@@ -263,6 +265,8 @@ def main() -> int:
     ap.add_argument("--keywords", default="g2b_keywords.txt")
     ap.add_argument("--no-filter", action="store_true")
     ap.add_argument("--max-price", type=float, default=3_000_000_000, help="기초금액 상한(원). 초과 공고 제외")
+    ap.add_argument("--no-seen", action="store_true", help="state/seen.json 무시(이미 판정한 공고도 수집)")
+    ap.add_argument("--include-closed", action="store_true", help="입찰마감 지난 공고도 수집")
     ap.add_argument("--key", default=os.environ.get("G2B_SERVICE_KEY", ""))
     a = ap.parse_args()
 
@@ -293,10 +297,19 @@ def main() -> int:
         no = d["uid"].rsplit("-", 1)[0]
         if no not in by_no or d["uid"] > by_no[no]["uid"]:
             by_no[no] = d
-    items = []
+    seen = set() if a.no_seen else seen_uids("g2b")
+    items, n_seen, n_closed = [], 0, 0
     for d in by_no.values():
         if "취소" in d["form"]:   # 취소공고 제외
             continue
+        if d["uid"] in seen or d["uid"].rsplit("-", 1)[0] in {u.rsplit("-", 1)[0] for u in seen}:
+            n_seen += 1
+            continue
+        if not a.include_closed:
+            end = d["end"] or d["open_date"]
+            if end and end < dt.datetime.now().strftime("%Y-%m-%d %H:%M"):
+                n_closed += 1
+                continue
         hit, bad, ok = match_keywords(d["title"], kw)
         if not a.no_filter and not ok:
             continue
@@ -311,6 +324,7 @@ def main() -> int:
         d["dday"] = dday(d["end"])
         items.append(d)
     items.sort(key=lambda x: x["end"])
+    log(f"이미 판정한 공고 제외 {n_seen}건, 마감 지난 공고 제외 {n_closed}건")
     write_outputs(items, out, date_from, date_to, len(raw_all))
     log(f"완료: 전체 {len(raw_all)}건 → 필터 통과 {len(items)}건 -> {out / 'digest.md'}")
     return 0
