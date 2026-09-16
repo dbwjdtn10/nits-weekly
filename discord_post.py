@@ -129,6 +129,11 @@ def main() -> int:
     if not a.webhook and not a.dry_run:
         log("DISCORD_WEBHOOK_URL 환경변수가 필요합니다.")
         return 2
+    # 붙여넣기 실수로 프리픽스가 중복된 웹훅 URL 정규화
+    prefix = "https://discord.com/api/webhooks/"
+    if a.webhook.count(prefix) > 1:
+        a.webhook = prefix + a.webhook.split(prefix)[-1]
+    a.webhook = a.webhook.strip()
     out = Path(a.out)
     ann = json.loads((out / "announcements.json").read_text("utf-8"))
     res = json.loads((out / "results.json").read_text("utf-8"))
@@ -144,7 +149,7 @@ def main() -> int:
 
     # 1) 헤더
     head = (
-        f"## 📋 NTIS 국가R&D통합공고 주간 리포트 ({date_from} ~ {date_to})\n"
+        f"## 📋 {a.title} ({date_from} ~ {date_to})\n"
         f"수집 **{len(items)}건** → 🟢 적합 **{sum(1 for r in picked if r['verdict']=='적합')}** · "
         f"🟡 조건부 **{sum(1 for r in picked if r['verdict']=='조건부')}** · ⚪ 부적합 {len(rejected)}"
         + (f" · 미판정 {len(unjudged)}" if unjudged else "")
