@@ -1,0 +1,5 @@
+out/
+out_test/
+*.pyc
+__pycache__/
+.env
