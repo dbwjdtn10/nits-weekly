@@ -7,7 +7,7 @@
 ┌ Claude Code 클라우드 routine (매주 월 09:00 KST, cron 0 0 * * 1 UTC) ┐
 │ 1. python ntis_collect.py   → out/digest.md, out/brief/<uid>.md, 첨부  │
 │ 2. Claude가 company_profile.md 기준으로 판정 → out/results.json       │
-│ 3. python discord_post.py   → Discord 웹훅 (적합만 embed + 첨부파일)   │
+│ 3. python discord_post.py   → Discord 웹훅 (적합·조건부 링크 목록만)    │
 │ 4. python seen_state.py mark → state/seen.json 커밋 (재판정 방지)       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -18,7 +18,7 @@
 | `ntis_collect.py` | 목록(POST 날짜검색) → 상세(view.do) → 첨부 다운로드(download.do) → PDF/HWP/HWPX/DOCX 텍스트 추출 → `brief/`(자격·대상·규모·기간 구간 발췌) 생성. 로그인/RSS 불필요 |
 | `g2b_collect.py` | 나라장터 입찰공고(용역) — 공공데이터포털 Open API로 지난주 게시분 수집 후 `g2b_keywords.txt`로 1차 필터. `G2B_SERVICE_KEY` 필요 |
 | `g2b_keywords.txt` | 나라장터 1차 필터 포함/제외 키워드 |
-| `discord_post.py` | `out/results.json` + `out/announcements.json`을 Discord 웹훅으로 발송. 기본은 **적합만** 개별 메시지(`--send 적합,조건부`로 변경 가능), 조건부는 헤더 링크 목록 |
+| `discord_post.py` | `out/results.json` + `out/announcements.json`을 Discord 웹훅으로 발송. 기본: **적합·조건부를 한 줄 링크 목록**으로, 부적합은 미언급 (`--format embed`로 상세 embed+첨부, `--send`로 대상 판정 변경) |
 | `seen_state.py` / `state/seen.json` | 이미 판정한 공고 기록. 수집기가 자동으로 제외하며, routine이 매주 커밋 |
 | `company_profile.md` | **X2R 프로필 + 판정 규칙** — 판정 품질을 좌우하므로 꼼꼼히 유지 |
 | `ROUTINE_PROMPT.md` | 클라우드 routine에 넣는 프롬프트 원본 |

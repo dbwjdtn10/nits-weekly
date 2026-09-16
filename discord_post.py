@@ -17,9 +17,9 @@
 환경변수:
   DISCORD_WEBHOOK_URL   (필수)
 사용:
-  python discord_post.py --out out            # 적합/조건부만 발송, 첨부 포함
-  python discord_post.py --out out --dry-run  # 콘솔 출력만
-  python discord_post.py --out out --no-files # 첨부 업로드 생략
+  python discord_post.py --out out                 # 적합·조건부를 링크 목록으로 발송 (부적합 미언급)
+  python discord_post.py --out out --dry-run       # 콘솔 출력만
+  python discord_post.py --out out --format embed  # 상세 embed + 첨부파일 형식
 """
 from __future__ import annotations
 
@@ -121,7 +121,8 @@ def main() -> int:
     ap.add_argument("--out", default="out")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-files", action="store_true")
-    ap.add_argument("--send", default="적합", help="개별 메시지로 보낼 판정 (콤마 구분). 기본: 적합만. 예: 적합,조건부")
+    ap.add_argument("--send", default="적합,조건부", help="보낼 판정 (콤마 구분). 기본: 적합,조건부 (조건부도 적합으로 취급)")
+    ap.add_argument("--format", default="links", choices=["links", "embed"], help="links: 공고당 한 줄 링크(기본) / embed: 상세 embed + 첨부")
     ap.add_argument("--with-rejected", action="store_true", help="부적합 공고 요약 목록도 발송")
     ap.add_argument("--webhook", default=os.environ.get("DISCORD_WEBHOOK_URL", ""))
     ap.add_argument("--title", default="NTIS 국가R&D통합공고 주간 리포트", help="헤더 제목")
@@ -151,27 +152,37 @@ def main() -> int:
     rejected = [r for r in judged if r.get("verdict") == "부적합"]
     unjudged = [u for u in items if u not in results]
 
-    # 1) 헤더
-    head = (
-        f"## 📋 {a.title} ({date_from} ~ {date_to})\n"
-        f"수집 **{len(items)}건** → 🟢 적합 **{n_fit}** · 🟡 조건부 {n_cond} · ⚪ 부적합 {len(rejected)}"
-        + (f" · 미판정 {len(unjudged)}" if unjudged else "")
-    )
-    if res.get("summary"):
-        head += f"\n> {trunc(res['summary'], 800)}"
+    # 1) 헤더 (부적합은 언급하지 않음)
+    head = f"## 📋 {a.title} ({date_from} ~ {date_to})\n수집 **{len(items)}건** 중 제안 가능 **{len(picked)}건**"
     if not picked:
-        head += "\n\n이번 주는 X2R이 제안 가능한(적합) 공고가 없습니다."
-    # 조건부는 개별 메시지 대신 헤더에 링크 목록으로만 표시
-    cond = [r for r in judged if r.get("verdict") == "조건부" and "조건부" not in send_set]
-    if cond:
-        head += "\n\n**🟡 조건부 (확인 필요)**\n" + "\n".join(
-            f"• [{trunc(items.get(str(r['uid']), {}).get('title', '?'), 60)}]({items.get(str(r['uid']), {}).get('ntis_url', '')}) — {trunc(r.get('reason', ''), 80)}"
-            for r in cond[:15]
-        )
-        head = trunc(head, 1950)
+        head += "\n\n이번 주는 X2R이 제안 가능한 공고가 없습니다."
+
+    # 2-a) links 형식: 공고당 한 줄 (제목 링크 · 마감 · 금액), 2000자 단위로 분할 전송
+    if a.format == "links":
+        lines = []
+        for r in picked:
+            it = items.get(str(r["uid"]))
+            if not it:
+                continue
+            extra = " · ".join(x for x in [
+                f"마감 {it.get('end','')} {it.get('dday','')}".strip() if it.get("end") else "",
+                trunc(it.get("budget", ""), 40),
+                trunc(f"{it.get('dept','')}", 30),
+            ] if x)
+            lines.append(f"• [{trunc(it.get('title','?'), 90)}]({it['ntis_url']})" + (f"\n　{extra}" if extra else ""))
+        buf = head
+        for ln in lines:
+            if len(buf) + len(ln) + 2 > 1900:
+                send(a.webhook, {"content": buf, "allowed_mentions": {"parse": []}}, dry=a.dry_run)
+                buf = ""
+            buf += ("\n\n" + ln) if buf else ln
+        send(a.webhook, {"content": buf, "allowed_mentions": {"parse": []}}, dry=a.dry_run)
+        log(f"완료: {len(lines)}건 링크 발송 (적합 {n_fit}, 조건부 {n_cond}, 부적합 {len(rejected)} 미발송)")
+        return 0
+
     send(a.webhook, {"content": head, "allowed_mentions": {"parse": []}}, dry=a.dry_run)
 
-    # 2) 적합/조건부 공고: 공고당 메시지 1개 (embed + 첨부)
+    # 2-b) embed 형식: 공고당 메시지 1개 (embed + 첨부)
     for r in picked:
         it = items.get(str(r["uid"]))
         if not it:

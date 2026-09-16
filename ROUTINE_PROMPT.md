@@ -52,7 +52,7 @@ python g2b_collect.py --out out/g2b
 python discord_post.py --out out
 python discord_post.py --out out/g2b --title "나라장터 입찰공고 주간 리포트"   # g2b 결과가 있을 때만
 ```
-- `DISCORD_WEBHOOK_URL` 환경변수를 사용합니다. **적합 공고만** 공고당 메시지 1개(embed + 첨부파일)로 발송되고, 조건부는 헤더에 링크 목록으로, 부적합은 건수만 표시됩니다.
+- `DISCORD_WEBHOOK_URL` 환경변수를 사용합니다. **적합·조건부 공고만** 한 줄 링크 목록(제목 링크 · 마감 · 금액 · 기관)으로 발송되고, **부적합은 전혀 언급되지 않습니다**. 첨부파일은 보내지 않습니다.
 - 전송 로그에 오류가 있으면 `--no-files`로 한 번 더 시도하세요.
 
 ## 4. 판정 기록 저장 (필수)
