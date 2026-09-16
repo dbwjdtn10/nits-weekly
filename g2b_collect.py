@@ -295,6 +295,8 @@ def main() -> int:
             by_no[no] = d
     items = []
     for d in by_no.values():
+        if "취소" in d["form"]:   # 취소공고 제외
+            continue
         hit, bad, ok = match_keywords(d["title"], kw)
         if not a.no_filter and not ok:
             continue
