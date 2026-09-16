@@ -24,6 +24,7 @@ import os
 import re
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 
 import requests
@@ -259,6 +260,9 @@ def main() -> int:
     if not a.key:
         log("G2B_SERVICE_KEY 환경변수(공공데이터포털 인증키)가 필요합니다.")
         return 2
+    # 공공데이터포털 "Encoding" 키(%2B, %3D 포함)를 넣어도 requests가 다시 인코딩하지 않도록 디코딩해 둔다
+    if "%" in a.key:
+        a.key = urllib.parse.unquote(a.key)
     date_from, date_to = (a.date_from, a.date_to) if a.date_from and a.date_to else default_range(a.days)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
