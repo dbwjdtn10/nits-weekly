@@ -47,30 +47,38 @@ def log(msg: str) -> None:
 
 
 # --------------------------------------------------------------------------- keywords
-def load_keywords(path: Path) -> tuple[list[str], list[str]]:
-    inc, exc = [], []
+def load_keywords(path: Path) -> dict[str, list[str]]:
+    """[include] 단독 통과, [weak] 다른 키워드와 함께일 때만 통과, [exclude] 하나라도 있으면 제외."""
+    kw: dict[str, list[str]] = {"include": [], "weak": [], "exclude": []}
     if not path.exists():
-        return inc, exc
+        return kw
     section = "include"
     for ln in path.read_text("utf-8").splitlines():
         ln = ln.strip()
         if not ln or ln.startswith("#"):
             continue
-        if ln.lower().startswith("[include]"):
-            section = "include"
+        m = re.match(r"\[(include|weak|exclude)\]", ln, re.I)
+        if m:
+            section = m.group(1).lower()
             continue
-        if ln.lower().startswith("[exclude]"):
-            section = "exclude"
-            continue
-        (inc if section == "include" else exc).append(ln)
-    return inc, exc
+        kw[section].append(ln)
+    return kw
 
 
-def match_keywords(text: str, inc: list[str], exc: list[str]) -> tuple[list[str], list[str]]:
-    t = text.lower()
-    hit = [k for k in inc if k.lower() in t]
-    bad = [k for k in exc if k.lower() in t]
-    return hit, bad
+def _kw_regex(k: str) -> re.Pattern:
+    # 짧은 영문 약어(AI, AR, VR, XR, MR, DX, 3D…)는 영문자 사이에 끼면 매칭하지 않음 (training, software 오탐 방지)
+    if re.fullmatch(r"[A-Za-z0-9\-]{1,4}", k):
+        return re.compile(r"(?<![A-Za-z])" + re.escape(k) + r"(?![A-Za-z])", re.I)
+    return re.compile(re.escape(k), re.I)
+
+
+def match_keywords(text: str, kw: dict[str, list[str]]) -> tuple[list[str], list[str], bool]:
+    """반환: (매칭된 키워드, 제외 키워드, 통과 여부)"""
+    strong = [k for k in kw["include"] if _kw_regex(k).search(text)]
+    weak = [k for k in kw["weak"] if _kw_regex(k).search(text)]
+    bad = [k for k in kw["exclude"] if _kw_regex(k).search(text)]
+    ok = bool(strong) or len(weak) >= 2
+    return strong + weak, bad, ok and not bad
 
 
 # --------------------------------------------------------------------------- api
@@ -254,6 +262,7 @@ def main() -> int:
     ap.add_argument("--types", default="servc", help="servc,thng,cnstwk 중 콤마 구분")
     ap.add_argument("--keywords", default="g2b_keywords.txt")
     ap.add_argument("--no-filter", action="store_true")
+    ap.add_argument("--max-price", type=float, default=3_000_000_000, help="기초금액 상한(원). 초과 공고 제외")
     ap.add_argument("--key", default=os.environ.get("G2B_SERVICE_KEY", ""))
     a = ap.parse_args()
 
@@ -266,8 +275,8 @@ def main() -> int:
     date_from, date_to = (a.date_from, a.date_to) if a.date_from and a.date_to else default_range(a.days)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    inc, exc = load_keywords(Path(a.keywords))
-    log(f"수집 기간: {date_from} ~ {date_to}  유형: {a.types}  키워드 {len(inc)}개/제외 {len(exc)}개 -> {out.resolve()}")
+    kw = load_keywords(Path(a.keywords))
+    log(f"수집 기간: {date_from} ~ {date_to}  유형: {a.types}  키워드 {len(kw['include'])}+약 {len(kw['weak'])}/제외 {len(kw['exclude'])} -> {out.resolve()}")
 
     raw_all: list[tuple[str, dict]] = []
     for typ in [t.strip() for t in a.types.split(",") if t.strip()]:
@@ -277,18 +286,26 @@ def main() -> int:
         for it in fetch_type(a.key, typ, date_from, date_to):
             raw_all.append((typ, it))
 
-    items, seen = [], set()
+    # 같은 공고번호는 최신 차수(재공고/변경공고)만 남긴다
+    by_no: dict[str, dict] = {}
     for typ, it in raw_all:
         d = normalize(it, typ)
-        if d["uid"] in seen:
+        no = d["uid"].rsplit("-", 1)[0]
+        if no not in by_no or d["uid"] > by_no[no]["uid"]:
+            by_no[no] = d
+    items = []
+    for d in by_no.values():
+        hit, bad, ok = match_keywords(d["title"], kw)
+        if not a.no_filter and not ok:
             continue
-        seen.add(d["uid"])
-        hay = " ".join([d["title"], d["dept"], d["agency"]])
-        hit, bad = match_keywords(hay, inc, exc)
-        if not a.no_filter:
-            if not hit or bad:
+        try:
+            if a.max_price and float(d["presmpt_price"] or 0) > a.max_price:
                 continue
+        except ValueError:
+            pass
         d["keywords"] = hit
+        if not d["end"]:
+            d["end"] = d["open_date"]
         d["dday"] = dday(d["end"])
         items.append(d)
     items.sort(key=lambda x: x["end"])
