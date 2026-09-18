@@ -387,6 +387,7 @@ def extract_text(path: Path) -> str:
     except Exception as e:  # noqa: BLE001
         log(f"  ! 텍스트 추출 실패 {path.name}: {e}")
         return f"[텍스트 추출 실패: {e}]"
+    t = re.sub(r"[\ud800-\udfff]", "", t)   # HWP 추출 시 섞이는 깨진 서로게이트 제거
     t = re.sub(r"[ \t\r\xa0]+", " ", t)
     t = re.sub(r"\n\s*\n+", "\n\n", t).strip()
     return t[:MAX_TEXT_PER_FILE]
