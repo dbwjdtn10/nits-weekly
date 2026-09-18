@@ -36,6 +36,7 @@ KST = ZoneInfo("Asia/Seoul")
 def now_kst() -> dt.datetime:
     return dt.datetime.now(KST)
 
+from ntis_collect import TEXT_EXTS, extract_text, make_brief
 from seen_state import seen_uids
 
 BASE = "http://apis.data.go.kr/1230000/ad/BidPublicInfoService"
@@ -201,6 +202,66 @@ def normalize(item: dict, typ: str) -> dict:
     return d
 
 
+QUAL_HIGH = re.compile(r"(직접생산|소프트웨어사업자|정보통신공사업|업종\s*코드|업종코드|면허|실적|소재지|지역\s*제한|지역제한|등록한 자|소지한 자|중소기업확인서|중소기업\s*확인서|공동수급|공동계약|자격요건|자격 요건)")
+QUAL_GENERIC = re.compile(r"(입찰참가자격|참가자격|참가 자격|입찰에 참가할 수 있는 자|제한사항|참가제한|참여제한|참여자격)")
+
+
+def download_notice_docs(d: dict, dest_dir: Path, max_files: int = 2) -> None:
+    """입찰공고서(PDF/HWPX/HWP) 최대 2개를 내려받아 텍스트 추출 → att['text']."""
+    cands = [a for a in d["attachments"] if Path(a["name"]).suffix.lower() in TEXT_EXTS]
+    # 공고서/제안요청서 우선, PDF 우선
+    cands.sort(key=lambda a: (0 if re.search(r"공고서|공고문|제안요청|RFP|과업", a["name"]) else 1,
+                              0 if a["name"].lower().endswith(".pdf") else 1))
+    for a in cands[:max_files]:
+        try:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            safe = re.sub(r'[\/:*?"<>|]+', "_", a["name"])[:150]
+            path = dest_dir / safe
+            if not path.exists():
+                r = session.get(a["url"], timeout=120, stream=True)
+                r.raise_for_status()
+                with open(path, "wb") as f:
+                    for chunk in r.iter_content(1 << 16):
+                        f.write(chunk)
+                        if f.tell() > 30 * 1024 * 1024:
+                            break
+            a["path"] = str(path)
+            a["text"] = extract_text(path)
+        except Exception as e:  # noqa: BLE001
+            log(f"  ! 공고서 다운로드/추출 실패 {a['name']}: {e}")
+        time.sleep(0.3)
+
+
+def _windows(text: str, rx: re.Pattern, before: int, after: int) -> list[list[int]]:
+    spans: list[list[int]] = []
+    for m in rx.finditer(text):
+        a, b = max(0, m.start() - before), min(len(text), m.end() + after)
+        if spans and a <= spans[-1][1]:
+            spans[-1][1] = max(spans[-1][1], b)
+        else:
+            spans.append([a, b])
+    return spans
+
+
+def qual_excerpt(text: str, limit: int = 7000) -> str:
+    """공고서 텍스트에서 참가자격 관련 구간만 발췌. 구체 자격 용어(직접생산·업종·면허·실적·소재지) 주변을 우선."""
+    if not text:
+        return ""
+    high = _windows(text, QUAL_HIGH, 400, 900)
+    generic = _windows(text, QUAL_GENERIC, 100, 700)
+    picked: list[list[int]] = []
+    total = 0
+    for a, b in high + generic:
+        if any(a < pb and b > pa for pa, pb in picked):   # 이미 포함된 구간 겹치면 생략
+            continue
+        picked.append([a, b])
+        total += b - a
+        if total > limit:
+            break
+    picked.sort()
+    return "\n\n[…]\n\n".join(text[a:b].strip() for a, b in picked)
+
+
 def dday(end: str) -> str:
     m = re.match(r"(\d{4})-(\d{2})-(\d{2})", end or "")
     if not m:
@@ -256,9 +317,16 @@ def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str, n_
             f"- 첨부: " + (", ".join(f"{a['name']} <{a['url']}>" for a in it["attachments"]) or "-"),
             "",
             "## 원본 필드", "",
-            "\n".join(f"- {k}: {v}" for k, v in it["raw"].items() if v not in (None, "", "null")),
+            "\n".join(f"- {k}: {v}" for k, v in it["raw"].items() if v not in (None, "", "null") and not k.startswith("ntceSpec")),
         ]
-        (out / "brief" / f"{it['uid']}.md").write_text("\n".join(parts), "utf-8")
+        bparts = list(parts)
+        for a in it["attachments"]:
+            t = a.get("text") or ""
+            if not t:
+                continue
+            bparts += ["", f"## 입찰공고서 참가자격 발췌: {a['name']}", "", qual_excerpt(t) or make_brief(t, head=800)[:4000]]
+            parts += ["", f"## 첨부 전문: {a['name']}", "", t]
+        (out / "brief" / f"{it['uid']}.md").write_text("\n".join(bparts), "utf-8")
         (out / "text" / f"{it['uid']}.md").write_text("\n".join(parts), "utf-8")
 
 
@@ -274,6 +342,7 @@ def main() -> int:
     ap.add_argument("--max-price", type=float, default=3_000_000_000, help="기초금액 상한(원). 초과 공고 제외")
     ap.add_argument("--no-seen", action="store_true", help="state/seen.json 무시(이미 판정한 공고도 수집)")
     ap.add_argument("--include-closed", action="store_true", help="입찰마감 지난 공고도 수집")
+    ap.add_argument("--no-attach", action="store_true", help="입찰공고서 다운로드/추출 생략")
     ap.add_argument("--key", default=os.environ.get("G2B_SERVICE_KEY", ""))
     a = ap.parse_args()
 
@@ -332,6 +401,10 @@ def main() -> int:
         items.append(d)
     items.sort(key=lambda x: x["end"])
     log(f"이미 판정한 공고 제외 {n_seen}건, 마감 지난 공고 제외 {n_closed}건")
+    if not a.no_attach:
+        for i, d in enumerate(items, 1):
+            log(f"[{i}/{len(items)}] 공고서 수집 {d['uid']} {d['title'][:40]}")
+            download_notice_docs(d, out / "attachments" / d["uid"])
     write_outputs(items, out, date_from, date_to, len(raw_all))
     log(f"완료: 전체 {len(raw_all)}건 → 필터 통과 {len(items)}건 -> {out / 'digest.md'}")
     return 0
