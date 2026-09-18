@@ -17,7 +17,7 @@
 환경변수:
   DISCORD_WEBHOOK_URL   (필수)
 사용:
-  python discord_post.py --out out                 # 적합·조건부를 링크 목록으로 발송 (부적합 미언급)
+  python discord_post.py --out out                 # 적합·조건부 링크 목록 + 부적합은 스포일러(접힘)로 발송
   python discord_post.py --out out --dry-run       # 콘솔 출력만
   python discord_post.py --out out --format embed  # 상세 embed + 첨부파일 형식
 """
@@ -123,7 +123,7 @@ def main() -> int:
     ap.add_argument("--no-files", action="store_true")
     ap.add_argument("--send", default="적합,조건부", help="보낼 판정 (콤마 구분). 기본: 적합,조건부 (조건부도 적합으로 취급)")
     ap.add_argument("--format", default="links", choices=["links", "embed"], help="links: 공고당 한 줄 링크(기본) / embed: 상세 embed + 첨부")
-    ap.add_argument("--with-rejected", action="store_true", help="부적합 공고 요약 목록도 발송")
+    ap.add_argument("--no-rejected", action="store_true", help="부적합 공고 스포일러 목록 생략")
     ap.add_argument("--webhook", default=os.environ.get("DISCORD_WEBHOOK_URL", ""))
     ap.add_argument("--title", default="NTIS 국가R&D통합공고 주간 리포트", help="헤더 제목")
     a = ap.parse_args()
@@ -164,9 +164,10 @@ def main() -> int:
             it = items.get(str(r["uid"]))
             if not it:
                 continue
+            budget = r.get("budget") or it.get("budget") or ""   # Claude가 공고문에서 읽은 예산 우선
             extra = " · ".join(x for x in [
                 f"마감 {it.get('end','')} {it.get('dday','')}".strip() if it.get("end") else "",
-                trunc(it.get("budget", ""), 40),
+                trunc(budget, 40),
                 trunc(f"{it.get('dept','')}", 30),
             ] if x)
             lines.append(f"• [{trunc(it.get('title','?'), 90)}]({it['ntis_url']})" + (f"\n　{extra}" if extra else ""))
@@ -177,7 +178,20 @@ def main() -> int:
                 buf = ""
             buf += ("\n\n" + ln) if buf else ln
         send(a.webhook, {"content": buf, "allowed_mentions": {"parse": []}}, dry=a.dry_run)
-        log(f"완료: {len(lines)}건 링크 발송 (적합 {n_fit}, 조건부 {n_cond}, 부적합 {len(rejected)} 미발송)")
+        # 부적합: 스포일러(||…||)로 가려서 별도 메시지 — 평소엔 안 보이고 클릭하면 펼쳐짐
+        if rejected and not a.no_rejected:
+            rl = []
+            for r in rejected:
+                it = items.get(str(r["uid"]), {})
+                rl.append(f"||• [{trunc(it.get('title', '?'), 70)}](<{it.get('ntis_url', '')}>) — {trunc(r.get('reason', ''), 70)}||")
+            rbuf = f"⚪ 부적합 {len(rejected)}건 (클릭하면 펼쳐집니다)"
+            for ln in rl:
+                if len(rbuf) + len(ln) + 1 > 1900:
+                    send(a.webhook, {"content": rbuf, "allowed_mentions": {"parse": []}}, dry=a.dry_run)
+                    rbuf = ""
+                rbuf += ("\n" + ln) if rbuf else ln
+            send(a.webhook, {"content": rbuf, "allowed_mentions": {"parse": []}}, dry=a.dry_run)
+        log(f"완료: {len(lines)}건 링크 발송 (적합 {n_fit}, 조건부 {n_cond}, 부적합 {len(rejected)} 스포일러)")
         return 0
 
     send(a.webhook, {"content": head, "allowed_mentions": {"parse": []}}, dry=a.dry_run)
@@ -208,7 +222,7 @@ def main() -> int:
         log(f"  전송: [{r['verdict']}] {it['title'][:40]} (첨부 {len(files)})")
 
     # 3) 부적합 요약(간략 목록)
-    if rejected and a.with_rejected:
+    if rejected and not a.no_rejected:
         lines = ["**⚪ 부적합으로 판정된 공고**"]
         for r in rejected:
             it = items.get(str(r["uid"]), {})

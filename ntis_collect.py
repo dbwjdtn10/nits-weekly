@@ -192,7 +192,7 @@ def fetch_detail(uid: str) -> dict:
     d["start"] = meta.get("접수일", "")
     d["end"] = meta.get("마감일", "")
     d["program"] = meta.get("사업명", "")
-    d["budget"] = meta.get("지원규모", meta.get("사업규모", ""))
+    d["budget"] = meta.get("지원규모") or meta.get("사업규모") or (f"공고금액 {meta['공고금액']}" if meta.get("공고금액") else "")
     d["contact"] = meta.get("문의처", "")
 
     # 첨부파일
