@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+from zoneinfo import ZoneInfo
 import json
 import os
 import re
@@ -28,6 +29,12 @@ import urllib.parse
 from pathlib import Path
 
 import requests
+
+KST = ZoneInfo("Asia/Seoul")
+
+
+def now_kst() -> dt.datetime:
+    return dt.datetime.now(KST)
 
 from seen_state import seen_uids
 
@@ -198,12 +205,12 @@ def dday(end: str) -> str:
     m = re.match(r"(\d{4})-(\d{2})-(\d{2})", end or "")
     if not m:
         return ""
-    n = (dt.date(int(m[1]), int(m[2]), int(m[3])) - dt.date.today()).days
+    n = (dt.date(int(m[1]), int(m[2]), int(m[3])) - now_kst().date()).days
     return f"D-{n}" if n >= 0 else f"마감({-n}일 경과)"
 
 
 def default_range(days: int | None) -> tuple[str, str]:
-    today = dt.date.today()
+    today = now_kst().date()
     if days:
         return (today - dt.timedelta(days=days - 1)).isoformat(), today.isoformat()
     this_mon = today - dt.timedelta(days=today.weekday())
@@ -216,7 +223,7 @@ def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str, n_
     (out / "text").mkdir(parents=True, exist_ok=True)
     (out / "announcements.json").write_text(
         json.dumps({"range": [date_from, date_to], "source": "g2b", "total_before_filter": n_total,
-                    "collected_at": dt.datetime.now().isoformat(), "items": items}, ensure_ascii=False, indent=1),
+                    "collected_at": now_kst().isoformat(), "items": items}, ensure_ascii=False, indent=1),
         "utf-8",
     )
     lines = [f"# 나라장터 입찰공고 수집 결과 ({date_from} ~ {date_to})", "",
@@ -307,7 +314,7 @@ def main() -> int:
             continue
         if not a.include_closed:
             end = d["end"] or d["open_date"]
-            if end and end < dt.datetime.now().strftime("%Y-%m-%d %H:%M"):
+            if end and end < now_kst().strftime("%Y-%m-%d %H:%M"):
                 n_closed += 1
                 continue
         hit, bad, ok = match_keywords(d["title"], kw)

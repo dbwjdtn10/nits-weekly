@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+from zoneinfo import ZoneInfo
 import html
 import io
 import json
@@ -34,6 +35,12 @@ import zlib
 from pathlib import Path
 
 import requests
+
+KST = ZoneInfo("Asia/Seoul")
+
+
+def now_kst() -> dt.datetime:
+    return dt.datetime.now(KST)
 
 from seen_state import seen_uids
 
@@ -433,7 +440,7 @@ def is_form_attachment(name: str) -> bool:
 
 # --------------------------------------------------------------------------- main
 def default_range(days: int | None) -> tuple[str, str]:
-    today = dt.date.today()
+    today = now_kst().date()
     if days:
         return (today - dt.timedelta(days=days - 1)).isoformat(), today.isoformat()
     this_mon = today - dt.timedelta(days=today.weekday())
@@ -447,7 +454,7 @@ def dday(end: str) -> str:
     if not m:
         return ""
     e = dt.date(int(m[1]), int(m[2]), int(m[3]))
-    n = (e - dt.date.today()).days
+    n = (e - now_kst().date()).days
     return f"D-{n}" if n >= 0 else f"마감({-n}일 경과)"
 
 
@@ -456,7 +463,7 @@ def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str) ->
     (out / "brief").mkdir(parents=True, exist_ok=True)
     (out / "announcements.json").write_text(
         json.dumps(
-            {"range": [date_from, date_to], "source": "ntis", "collected_at": dt.datetime.now().isoformat(), "items": items},
+            {"range": [date_from, date_to], "source": "ntis", "collected_at": now_kst().isoformat(), "items": items},
             ensure_ascii=False,
             indent=1,
         ),
