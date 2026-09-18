@@ -47,6 +47,8 @@ claude.ai/code → 입력창 위 구름 아이콘(환경 이름) → Default 위
   *.discord.com
   *.discordapp.com
   apis.data.go.kr
+  www.g2b.go.kr
+  g2b.go.kr
   www.cbist.or.kr
   cbist.or.kr
   ```
