@@ -27,9 +27,11 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -81,6 +83,21 @@ def send(webhook: str, payload: dict, files: list[Path] | None = None, dry: bool
 def trunc(s: str, n: int) -> str:
     s = (s or "").strip()
     return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def today_kst() -> dt.date:
+    return dt.datetime.now(ZoneInfo("Asia/Seoul")).date()
+
+
+def end_date(s: str) -> dt.date | None:
+    """'2026.10.07' / '2026-09-30 10:00' / '2026-09-29' 등에서 날짜만 추출."""
+    m = re.match(r"\s*(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})", s or "")
+    if not m:
+        return None
+    try:
+        return dt.date(int(m[1]), int(m[2]), int(m[3]))
+    except ValueError:
+        return None
 
 
 def build_embed(it: dict, res: dict) -> dict:
@@ -159,18 +176,25 @@ def main() -> int:
 
     # 2-a) links 형식: 공고당 한 줄 (제목 링크 · 마감 · 금액), 2000자 단위로 분할 전송
     if a.format == "links":
+        # 남은 일수가 많은 공고가 위로 오도록 정렬 (마감일 없는 건은 맨 아래)
+        def days_left(r: dict) -> int:
+            it = items.get(str(r["uid"]), {})
+            d = end_date(it.get("end", ""))
+            return (d - today_kst()).days if d else -10_000
+        picked.sort(key=days_left, reverse=True)
         lines = []
         for r in picked:
             it = items.get(str(r["uid"]))
             if not it:
                 continue
             budget = r.get("budget") or it.get("budget") or ""   # Claude가 공고문에서 읽은 예산 우선
-            extra = " · ".join(x for x in [
-                f"마감 {it.get('end','')} {it.get('dday','')}".strip() if it.get("end") else "",
-                trunc(budget, 40),
-                trunc(f"{it.get('dept','')}", 30),
-            ] if x)
-            lines.append(f"• [{trunc(it.get('title','?'), 90)}]({it['ntis_url']})" + (f"\n　{extra}" if extra else ""))
+            d = end_date(it.get("end", ""))
+            n = (d - today_kst()).days if d else None
+            dday = ("D-Day" if n == 0 else f"D-{n}" if n is not None and n > 0 else f"마감({-n}일 경과)" if n is not None else "마감 미정")
+            end_txt = d.strftime("%Y.%m.%d") if d else "-"
+            # 출력 순서: 디데이 / 마감일자 / 금액 / 공고업체
+            extra = " / ".join([f"**{dday}**", end_txt, trunc(budget, 40) or "금액 미정", trunc(it.get("agency") or it.get("dept") or "-", 30)])
+            lines.append(f"• [{trunc(it.get('title','?'), 90)}]({it['ntis_url']})\n　{extra}")
         # 부적합: 메시지에 줄을 차지하지 않도록 텍스트 파일로 만들어 마지막 메시지에 첨부 (클릭하면 Discord 안에서 열림)
         rej_file: Path | None = None
         if rejected and not a.no_rejected:
