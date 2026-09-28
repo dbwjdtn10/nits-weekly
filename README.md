@@ -15,8 +15,8 @@
 ## 파일
 | 파일 | 역할 |
 |---|---|
-| `ntis_collect.py` | 목록(POST 날짜검색) → 상세(view.do) → 첨부 다운로드(download.do) → PDF/HWP/HWPX/DOCX 텍스트 추출 → `brief/`(자격·대상·규모·기간 구간 발췌) 생성. 로그인/RSS 불필요 |
-| `g2b_collect.py` | 나라장터 입찰공고(용역) — 공공데이터포털 Open API로 지난주 게시분 수집 후 `g2b_keywords.txt`로 1차 필터. `G2B_SERVICE_KEY` 필요 |
+| `ntis_collect.py` | 목록(POST 날짜검색) → 상세(view.do) → 첨부 다운로드(download.do) → PDF/HWP/HWPX/DOCX/XLSX 텍스트 추출(ZIP은 풀어서 내부 문서까지) → `brief/`(자격·대상·규모·기간 구간 발췌, 양식·법령·매뉴얼류 제외, 읽지 못한 첨부 표시) 생성. 로그인/RSS 불필요. 세 수집기가 공유하는 추출·발췌 로직도 여기 있음 |
+| `g2b_collect.py` | 나라장터 입찰공고(용역) — 공공데이터포털 Open API로 지난주 게시분 수집 후 `g2b_keywords.txt`로 1차 필터, 입찰공고서·제안요청서·과업지시서 최대 4개(서약서·계약조건 등 공통서식 제외)를 받아 참가자격 발췌. `G2B_SERVICE_KEY` 필요 |
 | `g2b_keywords.txt` | 나라장터 1차 필터 포함/제외 키워드 |
 | `cbist_collect.py` | 충북과학기술혁신원 사업공고(cbist.or.kr mncd=1131) — 지난주 등록분 본문·첨부 수집. NTIS 수집기의 추출 로직 재사용 |
 | `discord_post.py` | `out/results.json` + `out/announcements.json`을 Discord 웹훅으로 발송. 기본: **적합·조건부를 한 줄 링크 목록**으로, 부적합은 미언급 (`--format embed`로 상세 embed+첨부, `--send`로 대상 판정 변경) |

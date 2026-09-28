@@ -54,7 +54,8 @@ HEADERS = {
 }
 MAX_TEXT_PER_FILE = 40_000   # 첨부 1개당 추출 텍스트 상한(문자)
 MAX_ATTACH_BYTES = 30 * 1024 * 1024
-TEXT_EXTS = {".pdf", ".hwp", ".hwpx", ".docx", ".txt"}
+TEXT_EXTS = {".pdf", ".hwp", ".hwpx", ".docx", ".xlsx", ".txt"}
+ZIP_MAX_DOCS = 20            # ZIP 1개에서 추출할 내부 문서 수 상한
 
 session = requests.Session()
 session.headers.update(HEADERS)
@@ -369,6 +370,73 @@ def extract_docx(path: Path) -> str:
         return _xml_text(z.read("word/document.xml"))
 
 
+def _strip_xml(b: bytes) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", "", b.decode("utf-8", "ignore")))
+
+
+def extract_xlsx(path: Path) -> str:
+    """시트별 행을 ' | '로 이어 붙인 텍스트 (서식·수식 무시)."""
+    out: list[str] = []
+    with zipfile.ZipFile(str(path)) as z:
+        names = z.namelist()
+        # 태그에 네임스페이스 접두어(<x:row>)가 붙는 파일도 있다
+        shared = [_strip_xml(si) for si in re.findall(rb"<(?:\w+:)?si\b[^>]*>(.*?)</(?:\w+:)?si>", z.read("xl/sharedStrings.xml"), re.S)] \
+            if "xl/sharedStrings.xml" in names else []
+        sheets = sorted((n for n in names if re.match(r"xl/worksheets/sheet\d+\.xml$", n)),
+                        key=lambda n: int(re.sub(r"\D", "", n)))
+        for n in sheets:
+            for row in re.findall(rb"<(?:\w+:)?row\b[^>]*>(.*?)</(?:\w+:)?row>", z.read(n), re.S):
+                row = re.sub(rb"<(?:\w+:)?c\b[^>]*/>", b"", row)   # 빈 셀
+                cells = []
+                for attrs, inner in re.findall(rb"<(?:\w+:)?c\b([^>]*)>(.*?)</(?:\w+:)?c>", row, re.S):
+                    v = re.search(rb"<(?:\w+:)?v>(.*?)</(?:\w+:)?v>", inner, re.S)
+                    if b't="s"' in attrs and v:
+                        i = int(v.group(1))
+                        cells.append(shared[i] if i < len(shared) else "")
+                    elif b't="inlineStr"' in attrs:
+                        cells.append(_strip_xml(inner))
+                    elif v:
+                        cells.append(v.group(1).decode("utf-8", "ignore"))
+                if any(c.strip() for c in cells):
+                    out.append(" | ".join(cells))
+            if sum(map(len, out)) > MAX_TEXT_PER_FILE:
+                break
+    return "\n".join(out)
+
+
+def _zip_member_name(info: zipfile.ZipInfo) -> str:
+    if info.flag_bits & 0x800:   # UTF-8 파일명 플래그
+        return info.filename
+    try:   # 한글 윈도우 압축 프로그램은 플래그 없이 CP949로 저장 → zipfile이 CP437로 잘못 해석
+        return info.filename.encode("cp437").decode("cp949")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return info.filename
+
+
+def extract_zip(path: Path) -> list[dict]:
+    """ZIP 첨부를 풀어 내부 문서별 텍스트 [{name, text}]. 중첩 ZIP은 풀지 않는다."""
+    dest = path.parent / f"{path.stem}_unzip"
+    parts: list[dict] = []
+    with zipfile.ZipFile(str(path)) as z:
+        for info in z.infolist():
+            name = _zip_member_name(info)
+            if info.is_dir() or "__MACOSX" in name or Path(name).suffix.lower() not in TEXT_EXTS:
+                continue
+            if info.file_size > MAX_ATTACH_BYTES:
+                log(f"  ! ZIP 내부 파일 용량 초과로 생략: {name}")
+                continue
+            try:
+                dest.mkdir(parents=True, exist_ok=True)
+                p = dest / (f"{len(parts):02d}_" + re.sub(r'[\\/:*?"<>|]+', "_", Path(name).name)[:150])
+                p.write_bytes(z.read(info))
+                parts.append({"name": name, "text": extract_text(p)})
+            except Exception as e:  # noqa: BLE001  (암호 ZIP 등)
+                parts.append({"name": name, "text": f"[텍스트 추출 실패: {e}]"})
+            if len(parts) >= ZIP_MAX_DOCS:
+                break
+    return parts
+
+
 def extract_text(path: Path) -> str:
     ext = path.suffix.lower()
     try:
@@ -380,6 +448,8 @@ def extract_text(path: Path) -> str:
             t = extract_hwpx(path)
         elif ext == ".docx":
             t = extract_docx(path)
+        elif ext == ".xlsx":
+            t = extract_xlsx(path)
         elif ext == ".txt":
             t = path.read_text("utf-8", errors="ignore")
         else:
@@ -406,6 +476,7 @@ BRIEF_KEYWORDS = re.compile(
 BRIEF_WINDOW_BEFORE = 150
 BRIEF_WINDOW_AFTER = 1400
 BRIEF_MAX_PER_SOURCE = 9000
+BRIEF_HARD_CAP = 12000   # 키워드가 촘촘해 구간이 하나로 이어져도 이 이상은 자른다
 
 
 def make_brief(text: str, head: int = 1200) -> str:
@@ -427,6 +498,9 @@ def make_brief(text: str, head: int = 1200) -> str:
         seg = text[a:b].strip()
         if not seg:
             continue
+        if total + len(seg) > BRIEF_HARD_CAP:
+            out.append(seg[: BRIEF_HARD_CAP - total] + "\n[… 발췌 상한 — 이후는 text/ 전문 참조]")
+            break
         out.append(seg)
         total += len(seg)
         if total > BRIEF_MAX_PER_SOURCE:
@@ -436,7 +510,69 @@ def make_brief(text: str, head: int = 1200) -> str:
 
 def is_form_attachment(name: str) -> bool:
     """양식/서식/매뉴얼류 첨부는 brief에서 제외."""
-    return bool(re.search(r"(양식|서식|신청서|계획서|증빙|매뉴얼|안내서\s*\(|동의서|체크리스트|FAQ)", name, re.I)) and not re.search(r"공고문|공고|RFP|제안요청", name, re.I)
+    return bool(re.search(r"(양식|서식|신청서|계획서|증빙|매뉴얼|안내서\s*\(|동의서|체크리스트|FAQ|법률|법령|시행령|시행규칙|관련\s*규정|가이드라인|IRIS)", name, re.I)) and not re.search(r"공고문|공고|RFP|제안요청", name, re.I)
+
+
+FAILED_TEXT = re.compile(r"^\[(텍스트 추출 실패|암호화된)")
+
+
+def extract_attachment(att: dict, path: Path) -> None:
+    """내려받은 첨부의 텍스트를 att['text']에, ZIP이면 내부 문서별로 att['parts']에 넣는다."""
+    ext = path.suffix.lower()
+    if ext == ".zip":
+        try:
+            att["parts"] = extract_zip(path)
+        except zipfile.BadZipFile as e:
+            att["text"] = f"[텍스트 추출 실패: ZIP 해제 불가 {e}]"
+    elif ext in TEXT_EXTS:
+        att["text"] = extract_text(path)
+
+
+def attachment_docs(att: dict) -> list[tuple[str, str, bool]]:
+    """첨부 → [(표시 이름, 텍스트, 양식류 여부)]. ZIP은 내부 문서별로 펼친다."""
+    if "parts" in att:
+        zip_is_form = is_form_attachment(att["name"])
+        return [
+            (f"{att['name']} › {p['name']}", p["text"],
+             is_form_attachment(p["name"]) or (zip_is_form and not re.search(r"공고|RFP|제안요청", p["name"], re.I)))
+            for p in att["parts"] if p["text"]
+        ]
+    return [(att["name"], att["text"], is_form_attachment(att["name"]))] if att.get("text") else []
+
+
+def attachment_log(att: dict) -> str:
+    docs = attachment_docs(att)
+    n = sum(len(t) for _, t, _ in docs)
+    return f"ZIP 내부 문서 {len(docs)}개, 텍스트 {n}자" if "parts" in att else f"텍스트 {n}자"
+
+
+def attachment_sections(atts: list[dict], excerpt=make_brief, heading: str = "첨부 (발췌)") -> tuple[list[str], list[str]]:
+    """첨부 목록 → (brief 줄, text 줄). brief는 양식류를 목록만 남기고, 읽지 못한 첨부를 따로 표시한다."""
+    brief: list[str] = []
+    text: list[str] = []
+    forms: list[str] = []
+    unread: list[str] = []
+    for a in atts:
+        docs = attachment_docs(a)
+        if not docs:
+            text += [f"## 첨부: {a['name']}", "", "(텍스트 추출 없음/불가)", ""]
+            if a.get("path") or a.get("skipped"):   # 내려받았는데(또는 용량 초과로) 못 읽은 것
+                unread.append(a["name"] + (" (용량 초과)" if a.get("skipped") == "too_big" else ""))
+            continue
+        for label, t, form in docs:
+            text += [f"## 첨부: {label}", "", t, ""]
+            if FAILED_TEXT.match(t):
+                unread.append(f"{label} {t[:60]}")
+            elif form:
+                forms.append(label)
+            else:
+                brief += [f"## {heading}: {label}", "", excerpt(t), ""]
+    if forms:
+        brief += ["## 발췌 생략(양식류) — 필요시 text/ 전문 참조", ""] + [f"- {n}" for n in forms] + [""]
+    if unread:
+        brief += ["## ⚠ 읽지 못한 첨부 (이미지·스캔본·암호화·비지원 형식) — 자격·분야가 여기에만 있을 수 있음", ""] \
+            + [f"- {n}" for n in unread] + [""]
+    return brief, text
 
 
 # --------------------------------------------------------------------------- main
@@ -503,20 +639,10 @@ def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str) ->
             it["body"] or "(본문 없음)",
             "",
         ]
-        for a in it["attachments"]:
-            parts += [f"## 첨부: {a['name']}", "", a.get("text") or "(텍스트 추출 없음/불가)", ""]
-        (out / "text" / f"{it['uid']}.md").write_text("\n".join(parts), "utf-8")
-
-        # brief: 메타 + 본문 발췌 + 공고문류 첨부 발췌 (양식류 제외)
-        bparts = parts[:10] + ["## 본문 (발췌)", "", make_brief(it["body"]) or "(본문 없음)", ""]
-        for a in it["attachments"]:
-            t = a.get("text") or ""
-            if not t or is_form_attachment(a["name"]):
-                continue
-            bparts += [f"## 첨부 (발췌): {a['name']}", "", make_brief(t), ""]
-        skipped = [a["name"] for a in it["attachments"] if a.get("text") and is_form_attachment(a["name"])]
-        if skipped:
-            bparts += ["## 발췌 생략(양식류) — 필요시 text/ 전문 참조", ""] + [f"- {n}" for n in skipped] + [""]
+        # brief: 메타 + 본문 발췌 + 공고문류 첨부 발췌 (양식류 제외, ZIP 내부 문서 포함)
+        att_brief, att_text = attachment_sections(it["attachments"])
+        (out / "text" / f"{it['uid']}.md").write_text("\n".join(parts + att_text), "utf-8")
+        bparts = parts[:10] + ["## 본문 (발췌)", "", make_brief(it["body"]) or "(본문 없음)", ""] + att_brief
         (out / "brief" / f"{it['uid']}.md").write_text("\n".join(bparts), "utf-8")
 
 
@@ -576,11 +702,8 @@ def main() -> int:
                     if p:
                         att["path"] = str(p.relative_to(out))
                         att["size"] = p.stat().st_size
-                        if p.suffix.lower() in TEXT_EXTS:
-                            att["text"] = extract_text(p)
-                            log(f"  + {p.name} ({att['size'] // 1024}KB, 텍스트 {len(att.get('text', ''))}자)")
-                        else:
-                            log(f"  + {p.name} ({att['size'] // 1024}KB, 텍스트 추출 대상 아님)")
+                        extract_attachment(att, p)
+                        log(f"  + {p.name} ({att['size'] // 1024}KB, {attachment_log(att)})")
                 except Exception as e:  # noqa: BLE001
                     log(f"  ! 첨부 실패 {att['name']}: {e}")
                 time.sleep(0.3)

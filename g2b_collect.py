@@ -36,7 +36,7 @@ KST = ZoneInfo("Asia/Seoul")
 def now_kst() -> dt.datetime:
     return dt.datetime.now(KST)
 
-from ntis_collect import TEXT_EXTS, extract_text, make_brief
+from ntis_collect import TEXT_EXTS, attachment_sections, extract_attachment, make_brief
 from seen_state import seen_uids
 
 BASE = "http://apis.data.go.kr/1230000/ad/BidPublicInfoService"
@@ -206,13 +206,23 @@ QUAL_HIGH = re.compile(r"(직접생산|소프트웨어사업자|정보통신공�
 QUAL_GENERIC = re.compile(r"(입찰참가자격|참가자격|참가 자격|입찰에 참가할 수 있는 자|제한사항|참가제한|참여제한|참여자격)")
 
 
-def download_notice_docs(d: dict, dest_dir: Path, max_files: int = 2) -> None:
-    """입찰공고서(PDF/HWPX/HWP) 최대 2개를 내려받아 텍스트 추출 → att['text']."""
-    cands = [a for a in d["attachments"] if Path(a["name"]).suffix.lower() in TEXT_EXTS]
-    # 공고서/제안요청서 우선, PDF 우선
-    cands.sort(key=lambda a: (0 if re.search(r"공고서|공고문|제안요청|RFP|과업", a["name"]) else 1,
-                              0 if a["name"].lower().endswith(".pdf") else 1))
-    for a in cands[:max_files]:
+DOC_MAIN = re.compile(r"공고|제안요청|RFP|과업|시방|규격", re.I)
+DOC_BOILERPLATE = re.compile(r"서약|계약서|일반조건|특수조건|동의서|유의사항|개인정보|양식|서식|위임장|확약|신청서")
+
+
+def download_notice_docs(d: dict, dest_dir: Path, max_files: int = 4) -> None:
+    """입찰공고서·제안요청서·과업지시서(PDF/HWP/HWPX/ZIP 등) 최대 4개를 내려받아 텍스트 추출.
+    공고·과업 문서를 우선하고 서약서·계약조건 같은 공통 서식은 받지 않으며, 같은 문서의 HWP/PDF 중복은 하나만."""
+    cands = [a for a in d["attachments"] if Path(a["name"]).suffix.lower() in TEXT_EXTS | {".zip"}
+             and (DOC_MAIN.search(a["name"]) or not DOC_BOILERPLATE.search(a["name"]))]
+    cands.sort(key=lambda a: (0 if DOC_MAIN.search(a["name"]) else 1, 0 if a["name"].lower().endswith(".pdf") else 1))
+    picked, stems = [], set()
+    for a in cands:
+        stem = Path(a["name"]).stem
+        if stem not in stems:
+            stems.add(stem)
+            picked.append(a)
+    for a in picked[:max_files]:
         try:
             dest_dir.mkdir(parents=True, exist_ok=True)
             safe = re.sub(r'[\/:*?"<>|]+', "_", a["name"])[:150]
@@ -226,7 +236,7 @@ def download_notice_docs(d: dict, dest_dir: Path, max_files: int = 2) -> None:
                         if f.tell() > 30 * 1024 * 1024:
                             break
             a["path"] = str(path)
-            a["text"] = extract_text(path)
+            extract_attachment(a, path)
         except Exception as e:  # noqa: BLE001
             log(f"  ! 공고서 다운로드/추출 실패 {a['name']}: {e}")
         time.sleep(0.3)
@@ -260,6 +270,14 @@ def qual_excerpt(text: str, limit: int = 7000) -> str:
             break
     picked.sort()
     return "\n\n[…]\n\n".join(text[a:b].strip() for a, b in picked)
+
+
+def g2b_excerpt(text: str) -> str:
+    """문서 앞부분(사업 개요·과업 범위) + 참가자격 구간."""
+    qual = qual_excerpt(text[1500:])
+    if not qual and len(text) > 1500:
+        return make_brief(text, head=800)[:4000]
+    return "\n\n[…]\n\n".join(x for x in [text[:1500].strip(), qual] if x)
 
 
 def dday(end: str) -> str:
@@ -319,15 +337,9 @@ def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str, n_
             "## 원본 필드", "",
             "\n".join(f"- {k}: {v}" for k, v in it["raw"].items() if v not in (None, "", "null") and not k.startswith("ntceSpec")),
         ]
-        bparts = list(parts)
-        for a in it["attachments"]:
-            t = a.get("text") or ""
-            if not t:
-                continue
-            bparts += ["", f"## 입찰공고서 참가자격 발췌: {a['name']}", "", qual_excerpt(t) or make_brief(t, head=800)[:4000]]
-            parts += ["", f"## 첨부 전문: {a['name']}", "", t]
-        (out / "brief" / f"{it['uid']}.md").write_text("\n".join(bparts), "utf-8")
-        (out / "text" / f"{it['uid']}.md").write_text("\n".join(parts), "utf-8")
+        att_brief, att_text = attachment_sections(it["attachments"], excerpt=g2b_excerpt, heading="입찰공고서 참가자격 발췌")
+        (out / "brief" / f"{it['uid']}.md").write_text("\n".join(parts + [""] + att_brief), "utf-8")
+        (out / "text" / f"{it['uid']}.md").write_text("\n".join(parts + [""] + att_text), "utf-8")
 
 
 def main() -> int:

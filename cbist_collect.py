@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 
 from ntis_collect import (
-    KST, MAX_ATTACH_BYTES, TEXT_EXTS, clean_ws, default_range, dday, extract_text, get, is_form_attachment,
+    MAX_ATTACH_BYTES, attachment_log, attachment_sections, clean_ws, default_range, dday, extract_attachment, get,
     log, make_brief, now_kst, session, strip_tags,
 )
 from seen_state import seen_uids
@@ -152,15 +152,10 @@ def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str) ->
         head = [f"# {it['title']}", "", f"- UID: {it['uid']} (충북과학기술혁신원)",
                 f"- 등록 {it['reg_date']} | 접수 {it['start']} ~ {it['end']} | {it['status']}",
                 f"- 상세: {it['ntis_url']}", ""]
-        parts = head + ["## 본문", "", it["body"] or "(본문 없음)", ""]
-        for a in it["attachments"]:
-            parts += [f"## 첨부: {a['name']}", "", a.get("text") or "(텍스트 추출 없음/불가)", ""]
+        att_brief, att_text = attachment_sections(it["attachments"])
+        parts = head + ["## 본문", "", it["body"] or "(본문 없음)", ""] + att_text
         (out / "text" / f"{it['uid']}.md").write_text("\n".join(parts), "utf-8")
-        bparts = head + ["## 본문 (발췌)", "", make_brief(it["body"]) or "(본문 없음)", ""]
-        for a in it["attachments"]:
-            t = a.get("text") or ""
-            if t and not is_form_attachment(a["name"]):
-                bparts += [f"## 첨부 (발췌): {a['name']}", "", make_brief(t), ""]
+        bparts = head + ["## 본문 (발췌)", "", make_brief(it["body"]) or "(본문 없음)", ""] + att_brief
         (out / "brief" / f"{it['uid']}.md").write_text("\n".join(bparts), "utf-8")
 
 
@@ -208,9 +203,8 @@ def main() -> int:
                     if p:
                         att["path"] = str(p.relative_to(out))
                         att["size"] = p.stat().st_size
-                        if p.suffix.lower() in TEXT_EXTS:
-                            att["text"] = extract_text(p)
-                            log(f"  + {p.name} ({att['size'] // 1024}KB, 텍스트 {len(att.get('text', ''))}자)")
+                        extract_attachment(att, p)
+                        log(f"  + {p.name} ({att['size'] // 1024}KB, {attachment_log(att)})")
                 except Exception as e:  # noqa: BLE001
                     log(f"  ! 첨부 실패 {att['name']}: {e}")
                 time.sleep(0.3)
