@@ -176,10 +176,8 @@ def main() -> int:
         log(f"발송 생략: 적합 0건 (수집 {len(items)}건, 조건부 {n_cond}건, 부적합 {len(rejected)}건)")
         return 0
 
-    # 1) 헤더 (부적합은 언급하지 않음)
-    head = f"## 📋 {a.title} ({date_from} ~ {date_to})\n수집 **{len(items)}건** 중 적합 **{len(picked)}건**"
-    if not picked:
-        head += "\n\n이번 수집분에는 X2R이 제안 가능한 공고가 없습니다."
+    # 1) 헤더 — 한 줄로 짧게 (날짜·전체 건수는 daily_summary.py의 요약 줄이 담당)
+    head = f"**{a.title}** — 적합 {len(picked)}건"
 
     # 2-a) links 형식: 공고당 한 줄 (제목 링크 · 마감 · 금액), 2000자 단위로 분할 전송
     if a.format == "links":

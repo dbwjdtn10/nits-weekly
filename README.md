@@ -22,6 +22,7 @@
 | `boards_collect.py` | 게시판형 공고 수집기 `--site riia\|mss\|bizinfo\|bizinfo_other` — 충북 지역혁신클러스터(cb.riia.or.kr), 중기부 사업공고(mss.go.kr cbIdx=310), 기업마당 지원사업(충북·충남 / 그 외 14개 시·도, 접수중). 등록분 본문·첨부 수집, `--dedupe`로 다른 소스·seen.json과 제목이 같은 재게시 공고 제외 |
 | `bizinfo_keywords.txt` | 기업마당 타지역(`bizinfo_other`) 공고명 1차 필터 포함/제외 키워드 |
 | `discord_post.py` | `out/results.json` + `out/announcements.json`을 Discord 웹훅으로 발송. 기본: **적합·조건부를 한 줄 링크 목록**으로, 부적합은 미언급 (`--format embed`로 상세 embed+첨부, `--send`로 대상 판정 변경) |
+| `daily_summary.py` | 매일 Discord 맨 앞 한 줄 요약 (`📋 10/01 공고 확인 — 나라장터 45 · NTIS 4건 중 적합 2건`). 적합 0건이어도 발송해 routine 동작 여부를 알 수 있게 함 |
 | `seen_state.py` / `state/seen.json` | 이미 판정한 공고 기록. 수집기가 자동으로 제외하며, routine이 매일 커밋 |
 | `company_profile.md` | **X2R 프로필 + 판정 규칙** — 판정 품질을 좌우하므로 꼼꼼히 유지 |
 | `ROUTINE_PROMPT.md` | 클라우드 routine에 넣는 프롬프트 원본 |
