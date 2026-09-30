@@ -1,11 +1,11 @@
-# NTIS 국가R&D통합공고 → X2R 적합성 판정 → Discord 주간 리포트
+# 정부 R&D·입찰·지원사업 공고 → X2R 적합성 판정 → Discord 일일 리포트
 
-매주 월요일, 지난주에 NTIS(https://www.ntis.go.kr/rndgate/eg/un/ra/mng.do)에 등록된 공고를 수집하고,
+평일 매일 아침, 최근 4일간 NTIS·나라장터·충북과기혁신원·충북 지역혁신클러스터·중기부·기업마당에 등록된 공고를 수집하고 (이미 판정한 공고는 제외),
 `company_profile.md` 기준으로 X2R이 제안 가능한지 판정해 Discord 채널로 발송한다.
 
 ```
-┌ Claude Code 클라우드 routine (매주 월 09:00 KST, cron 0 0 * * 1 UTC) ┐
-│ 1. ntis_collect / g2b_collect / cbist_collect → out/*/brief/<uid>.md    │
+┌ Claude Code 클라우드 routine (평일 09:00 KST, cron 0 0 * * 1-5 UTC) ┐
+│ 1. ntis / g2b / cbist / boards(riia·mss·bizinfo) → out/*/brief/<uid>.md │
 │ 2. Claude가 company_profile.md 기준으로 판정 → out/results.json       │
 │ 3. python discord_post.py   → Discord 웹훅 (적합·조건부 링크 목록만)    │
 │ 4. python seen_state.py mark → state/seen.json 커밋 (재판정 방지)       │
@@ -19,8 +19,10 @@
 | `g2b_collect.py` | 나라장터 입찰공고(용역) — 공공데이터포털 Open API로 지난주 게시분 수집 후 `g2b_keywords.txt`로 1차 필터, 입찰공고서·제안요청서·과업지시서 최대 4개(서약서·계약조건 등 공통서식 제외)를 받아 참가자격 발췌. `G2B_SERVICE_KEY` 필요 |
 | `g2b_keywords.txt` | 나라장터 1차 필터 포함/제외 키워드 |
 | `cbist_collect.py` | 충북과학기술혁신원 사업공고(cbist.or.kr mncd=1131) — 지난주 등록분 본문·첨부 수집. NTIS 수집기의 추출 로직 재사용 |
+| `boards_collect.py` | 게시판형 공고 수집기 `--site riia\|mss\|bizinfo\|bizinfo_other` — 충북 지역혁신클러스터(cb.riia.or.kr), 중기부 사업공고(mss.go.kr cbIdx=310), 기업마당 지원사업(충북·충남 / 그 외 14개 시·도, 접수중). 등록분 본문·첨부 수집, `--dedupe`로 다른 소스·seen.json과 제목이 같은 재게시 공고 제외 |
+| `bizinfo_keywords.txt` | 기업마당 타지역(`bizinfo_other`) 공고명 1차 필터 포함/제외 키워드 |
 | `discord_post.py` | `out/results.json` + `out/announcements.json`을 Discord 웹훅으로 발송. 기본: **적합·조건부를 한 줄 링크 목록**으로, 부적합은 미언급 (`--format embed`로 상세 embed+첨부, `--send`로 대상 판정 변경) |
-| `seen_state.py` / `state/seen.json` | 이미 판정한 공고 기록. 수집기가 자동으로 제외하며, routine이 매주 커밋 |
+| `seen_state.py` / `state/seen.json` | 이미 판정한 공고 기록. 수집기가 자동으로 제외하며, routine이 매일 커밋 |
 | `company_profile.md` | **X2R 프로필 + 판정 규칙** — 판정 품질을 좌우하므로 꼼꼼히 유지 |
 | `ROUTINE_PROMPT.md` | 클라우드 routine에 넣는 프롬프트 원본 |
 
@@ -35,6 +37,7 @@ python discord_post.py --out out --dry-run
 python discord_post.py --out out
 set G2B_SERVICE_KEY=...
 python g2b_collect.py --from 2026-09-07 --to 2026-09-13 --out out/g2b
+python boards_collect.py --site bizinfo --from 2026-09-21 --to 2026-09-27 --out out/bizinfo
 ```
 
 ## 클라우드 환경 설정 (routine 실행 전 1회)
@@ -51,6 +54,9 @@ claude.ai/code → 입력창 위 구름 아이콘(환경 이름) → Default 위
   g2b.go.kr
   www.cbist.or.kr
   cbist.or.kr
+  cb.riia.or.kr
+  www.mss.go.kr
+  www.bizinfo.go.kr
   ```
 - **Environment variables**:
   ```

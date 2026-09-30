@@ -458,6 +458,7 @@ def extract_text(path: Path) -> str:
         log(f"  ! 텍스트 추출 실패 {path.name}: {e}")
         return f"[텍스트 추출 실패: {e}]"
     t = re.sub(r"[\ud800-\udfff]", "", t)   # HWP 추출 시 섞이는 깨진 서로게이트 제거
+    t = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", t)   # 제어문자(NUL 등)가 섞이면 grep이 바이너리로 취급
     t = re.sub(r"[ \t\r\xa0]+", " ", t)
     t = re.sub(r"\n\s*\n+", "\n\n", t).strip()
     return t[:MAX_TEXT_PER_FILE]

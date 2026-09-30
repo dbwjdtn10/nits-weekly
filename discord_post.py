@@ -142,7 +142,7 @@ def main() -> int:
     ap.add_argument("--format", default="links", choices=["links", "embed"], help="links: 공고당 한 줄 링크(기본) / embed: 상세 embed + 첨부")
     ap.add_argument("--no-rejected", action="store_true", help="부적합 목록 파일 첨부 생략")
     ap.add_argument("--webhook", default=os.environ.get("DISCORD_WEBHOOK_URL", ""))
-    ap.add_argument("--title", default="NTIS 국가R&D통합공고 주간 리포트", help="헤더 제목")
+    ap.add_argument("--title", default="NTIS 국가R&D통합공고 일일 리포트", help="헤더 제목")
     a = ap.parse_args()
 
     if not a.webhook and not a.dry_run:
@@ -172,7 +172,7 @@ def main() -> int:
     # 1) 헤더 (부적합은 언급하지 않음)
     head = f"## 📋 {a.title} ({date_from} ~ {date_to})\n수집 **{len(items)}건** 중 제안 가능 **{len(picked)}건**"
     if not picked:
-        head += "\n\n이번 주는 X2R이 제안 가능한 공고가 없습니다."
+        head += "\n\n이번 수집분에는 X2R이 제안 가능한 공고가 없습니다."
 
     # 2-a) links 형식: 공고당 한 줄 (제목 링크 · 마감 · 금액), 2000자 단위로 분할 전송
     if a.format == "links":
