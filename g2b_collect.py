@@ -36,7 +36,7 @@ KST = ZoneInfo("Asia/Seoul")
 def now_kst() -> dt.datetime:
     return dt.datetime.now(KST)
 
-from ntis_collect import TEXT_EXTS, attachment_sections, extract_attachment, make_brief
+from ntis_collect import FAILED_TEXT, TEXT_EXTS, attachment_docs, attachment_sections, extract_attachment, make_brief
 from seen_state import seen_uids
 
 BASE = "http://apis.data.go.kr/1230000/ad/BidPublicInfoService"
@@ -57,9 +57,13 @@ def log(msg: str) -> None:
 
 
 # --------------------------------------------------------------------------- keywords
+KW_SECTIONS = ("strong", "include", "weak", "exclude", "class_include", "class_exclude")
+
+
 def load_keywords(path: Path) -> dict[str, list[str]]:
-    """[include] 단독 통과, [weak] 다른 키워드와 함께일 때만 통과, [exclude] 하나라도 있으면 제외."""
-    kw: dict[str, list[str]] = {"include": [], "weak": [], "exclude": []}
+    """[strong] 단독 통과 + 제목 제외어 무시, [include] 단독 통과, [weak] 다른 키워드와 함께일 때만 통과,
+    [exclude] 하나라도 있으면 제외, [class_include]/[class_exclude] 공공조달분류(중분류·세분류)로 무조건 통과/제외."""
+    kw: dict[str, list[str]] = {s: [] for s in KW_SECTIONS}
     if not path.exists():
         return kw
     section = "include"
@@ -67,7 +71,7 @@ def load_keywords(path: Path) -> dict[str, list[str]]:
         ln = ln.strip()
         if not ln or ln.startswith("#"):
             continue
-        m = re.match(r"\[(include|weak|exclude)\]", ln, re.I)
+        m = re.match(r"\[(" + "|".join(KW_SECTIONS) + r")\]", ln, re.I)
         if m:
             section = m.group(1).lower()
             continue
@@ -82,13 +86,19 @@ def _kw_regex(k: str) -> re.Pattern:
     return re.compile(re.escape(k), re.I)
 
 
-def match_keywords(text: str, kw: dict[str, list[str]]) -> tuple[list[str], list[str], bool]:
-    """반환: (매칭된 키워드, 제외 키워드, 통과 여부)"""
-    strong = [k for k in kw["include"] if _kw_regex(k).search(text)]
+def match_keywords(text: str, kw: dict[str, list[str]], classes: tuple[str, ...] = ()) -> tuple[list[str], list[str], bool]:
+    """반환: (매칭된 키워드, 제외 사유, 통과 여부). classes: 공고의 공공조달분류명(중분류·세분류)."""
+    cls = {c.strip() for c in classes if c and c.strip()}
+    cls_bad = [c for c in kw.get("class_exclude", []) if c in cls]
+    if cls_bad:
+        return [], [f"분류:{c}" for c in cls_bad], False
+    cls_ok = [f"분류:{c}" for c in kw.get("class_include", []) if c in cls]
+    strong = [k for k in kw.get("strong", []) if _kw_regex(k).search(text)]
+    inc = [k for k in kw["include"] if _kw_regex(k).search(text)]
     weak = [k for k in kw["weak"] if _kw_regex(k).search(text)]
-    bad = [k for k in kw["exclude"] if _kw_regex(k).search(text)]
-    ok = bool(strong) or len(weak) >= 2
-    return strong + weak, bad, ok and not bad
+    bad = [] if (strong or cls_ok) else [k for k in kw["exclude"] if _kw_regex(k).search(text)]
+    ok = bool(cls_ok or strong or inc) or len(weak) >= 2
+    return cls_ok + strong + inc + weak, bad, ok and not bad
 
 
 # --------------------------------------------------------------------------- api
@@ -253,7 +263,7 @@ def _windows(text: str, rx: re.Pattern, before: int, after: int) -> list[list[in
     return spans
 
 
-def qual_excerpt(text: str, limit: int = 7000) -> str:
+def qual_excerpt(text: str, limit: int = 3500) -> str:
     """공고서 텍스트에서 참가자격 관련 구간만 발췌. 구체 자격 용어(직접생산·업종·면허·실적·소재지) 주변을 우선."""
     if not text:
         return ""
@@ -273,11 +283,61 @@ def qual_excerpt(text: str, limit: int = 7000) -> str:
 
 
 def g2b_excerpt(text: str) -> str:
-    """문서 앞부분(사업 개요·과업 범위) + 참가자격 구간."""
-    qual = qual_excerpt(text[1500:])
-    if not qual and len(text) > 1500:
-        return make_brief(text, head=800)[:4000]
-    return "\n\n[…]\n\n".join(x for x in [text[:1500].strip(), qual] if x)
+    """참가자격 구간 (문서 앞부분은 brief 맨 위 '과업 개요'에 따로 둔다)."""
+    return qual_excerpt(text) or make_brief(text, head=0)[:3000]
+
+
+OVERVIEW_DOC = re.compile(r"제안요청|과업|RFP|시방|규격", re.I)
+# 우선순위: 과업 내용·범위(무엇을 만드는지) > 사업 개요·목적(왜 하는지)
+OVERVIEW_HEADS = [
+    re.compile(r"(과업|사업|용역)\s*(내용|범위)|주요\s*과업|세부\s*과업|요구\s*사항"),
+    re.compile(r"(사업|과업|용역)\s*개요|사업\s*목적|추진\s*배경"),
+]
+NOISE_LINE = re.compile(r"^(그림입니다|원본 그림의|[\s|·.\-─]*$)")
+TOC_LINE = re.compile(r"(\.{2,}|·{2,}|…|\s)\s*\d{1,3}\s*$")
+
+
+NOTICE_START = re.compile(r"입찰에\s*부치는\s*사항|용\s*역\s*명|공\s*고\s*명|사\s*업\s*명")
+
+
+def _is_toc(t: str, pos: int) -> bool:
+    """제목 뒤 몇 줄이 '… 12'처럼 쪽번호로 끝나거나, 대부분 짧은 제목 줄이면 목차."""
+    lines = [ln.strip() for ln in t[pos:pos + 500].splitlines() if ln.strip()][:7]
+    if "· · · ·" in t[pos:pos + 300] or sum(bool(TOC_LINE.search(ln)) for ln in lines) >= 3:
+        return True
+    return len(lines) >= 5 and sum(len(ln) <= 30 for ln in lines) >= len(lines) - 1
+
+
+def _is_heading(t: str, pos: int) -> bool:
+    """본문 문장 속 단어('과업내용의 현저한 변경…')가 아니라 제목인지.
+    '4. 과업 내용', 'Ⅱ. 사업 개요', '□ 과업범위'처럼 번호·기호가 앞에 붙었거나(PDF는 줄바꿈 없이 이어짐), 줄 머리의 짧은 줄."""
+    if re.search(r"(\d{1,2}|[ⅠⅡⅢⅣⅤⅥⅦ]|[가-하])[.)]\s*$|[□■○◦❍▣◎●]\s*$", t[max(0, pos - 6):pos]):
+        return True
+    ls = t.rfind("\n", 0, pos) + 1
+    le = t.find("\n", pos)
+    line = t[ls:le if le > 0 else len(t)]
+    return pos - ls <= 12 and len(line.strip()) <= 40
+
+
+def task_overview(atts: list[dict], limit: int = 2000) -> tuple[str, str]:
+    """제안요청서·과업지시서(없으면 입찰공고서)의 과업 내용·범위 구간. 1단계 방향 판정용.
+    목차에 나온 제목은 건너뛰고, 본문에 처음 나오는 '과업 내용/범위'(없으면 '사업 개요/목적')부터 자른다."""
+    docs = [(label, t) for a in atts for label, t, form in attachment_docs(a) if not form and not FAILED_TEXT.match(t)]
+    for label, t in sorted(docs, key=lambda d: not OVERVIEW_DOC.search(d[0])):
+        start = 0
+        if OVERVIEW_DOC.search(label):
+            for rx in OVERVIEW_HEADS:
+                hit = next((m.start() for m in rx.finditer(t) if _is_heading(t, m.start()) and not _is_toc(t, m.start())), None)
+                if hit is not None:
+                    start = hit
+                    break
+        else:   # 입찰공고서: 청렴계약 등 머리 문구를 건너뛰고 '입찰에 부치는 사항/용역명'부터 (용역명·기간·예산)
+            m = NOTICE_START.search(t)
+            start = m.start() if m else 0
+        lines = [ln.strip() for ln in t[start:start + limit * 2].splitlines()]
+        body = "\n".join(ln for ln in lines if not NOISE_LINE.match(ln))
+        return label, body[:limit].strip()
+    return "", ""
 
 
 def dday(end: str) -> str:
@@ -332,14 +392,28 @@ def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str, n_
             f"- 지역제한: {it['region_limit'] or '-'} | 업종제한: {it['industry_limit'] or '-'} | 참가제한: {it['sme_only'] or '-'}",
             f"- 담당: {it['contact'] or '-'}",
             f"- 상세: {it['ntis_url']}",
-            f"- 첨부: " + (", ".join(f"{a['name']} <{a['url']}>" for a in it["attachments"]) or "-"),
-            "",
-            "## 원본 필드", "",
-            "\n".join(f"- {k}: {v}" for k, v in it["raw"].items() if v not in (None, "", "null") and not k.startswith("ntceSpec")),
+            f"- 첨부: " + (", ".join(a["name"] for a in it["attachments"]) or "-"),
         ]
+        # API 원본 필드는 brief의 절반 이상을 차지하지만 판정에 쓰는 건 몇 개뿐 → brief엔 요약 한 줄, 전체는 text/에만
+        r = it["raw"]
+        cls = " > ".join(x.strip() for x in [r.get("pubPrcrmntLrgClsfcNm"), r.get("pubPrcrmntMidClsfcNm"), r.get("pubPrcrmntClsfcNm")] if x and x.strip())
+        parts.append("- " + " | ".join(x for x in [
+            f"공공조달분류: {cls or '-'}",
+            f"용역구분: {r['srvceDivNm']}" if r.get("srvceDivNm") else "",
+            f"낙찰방법: {r['sucsfbidMthdNm']}" if r.get("sucsfbidMthdNm") else "",
+            f"공동수급: {r['cmmnSpldmdMethdNm']}" if r.get("cmmnSpldmdMethdNm") else "",
+            f"지역제한 판단기준: {r['rgnLmtBidLocplcJdgmBssNm']}" if r.get("rgnLmtBidLocplcJdgmBssNm") else "",
+            f"구매대상물품: {r['purchsObjPrdctList']}" if r.get("purchsObjPrdctList") else "",
+        ] if x))
+        parts.append("")
+        raw_lines = ["## 원본 필드", "",
+                     "\n".join(f"- {k}: {v}" for k, v in r.items() if v not in (None, "", "null") and not k.startswith("ntceSpec")), ""]
         att_brief, att_text = attachment_sections(it["attachments"], excerpt=g2b_excerpt, heading="입찰공고서 참가자격 발췌")
-        (out / "brief" / f"{it['uid']}.md").write_text("\n".join(parts + [""] + att_brief), "utf-8")
-        (out / "text" / f"{it['uid']}.md").write_text("\n".join(parts + [""] + att_text), "utf-8")
+        ov_name, ov = task_overview(it["attachments"])
+        overview = ([f"## 과업 개요 ({ov_name} 앞부분)", "", ov, ""] if ov
+                    else ["## 과업 개요", "", "(공고서·제안요청서 텍스트 없음 — 과업 내용 확인 불가)", ""])
+        (out / "brief" / f"{it['uid']}.md").write_text("\n".join(parts + overview + att_brief), "utf-8")
+        (out / "text" / f"{it['uid']}.md").write_text("\n".join(parts + raw_lines + att_text), "utf-8")
 
 
 def main() -> int:
@@ -398,7 +472,8 @@ def main() -> int:
             if end and end < now_kst().strftime("%Y-%m-%d %H:%M"):
                 n_closed += 1
                 continue
-        hit, bad, ok = match_keywords(d["title"], kw)
+        raw = d["raw"]
+        hit, bad, ok = match_keywords(d["title"], kw, (raw.get("pubPrcrmntMidClsfcNm") or "", raw.get("pubPrcrmntClsfcNm") or ""))
         if not a.no_filter and not ok:
             continue
         try:

@@ -510,7 +510,9 @@ def make_brief(text: str, head: int = 1200) -> str:
 
 
 def is_form_attachment(name: str) -> bool:
-    """양식/서식/매뉴얼류 첨부는 brief에서 제외."""
+    """양식/서식/매뉴얼류·계약 공통서류(일반조건·유의서·청렴계약 등) 첨부는 brief에서 제외."""
+    if re.search(r"(일반조건|특수조건|유의서|청렴|계약예규|예규|조달청고시|서약서|위임장|확약서)", name):
+        return True
     return bool(re.search(r"(양식|서식|신청서|계획서|증빙|매뉴얼|안내서\s*\(|동의서|체크리스트|FAQ|법률|법령|시행령|시행규칙|관련\s*규정|가이드라인|IRIS)", name, re.I)) and not re.search(r"공고문|공고|RFP|제안요청", name, re.I)
 
 

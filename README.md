@@ -17,7 +17,7 @@
 |---|---|
 | `ntis_collect.py` | 목록(POST 날짜검색) → 상세(view.do) → 첨부 다운로드(download.do) → PDF/HWP/HWPX/DOCX/XLSX 텍스트 추출(ZIP은 풀어서 내부 문서까지) → `brief/`(자격·대상·규모·기간 구간 발췌, 양식·법령·매뉴얼류 제외, 읽지 못한 첨부 표시) 생성. 로그인/RSS 불필요. 세 수집기가 공유하는 추출·발췌 로직도 여기 있음 |
 | `g2b_collect.py` | 나라장터 입찰공고(용역) — 공공데이터포털 Open API로 지난주 게시분 수집 후 `g2b_keywords.txt`로 1차 필터, 입찰공고서·제안요청서·과업지시서 최대 4개(서약서·계약조건 등 공통서식 제외)를 받아 참가자격 발췌. `G2B_SERVICE_KEY` 필요 |
-| `g2b_keywords.txt` | 나라장터 1차 필터 포함/제외 키워드 |
+| `g2b_keywords.txt` | 나라장터 1차 필터 — 공공조달분류(`[class_exclude]`/`[class_include]`)로 업종째 거르고, 공고명 키워드(`[strong]`은 제외어 무시 / `[include]` / `[weak]` / `[exclude]`)로 판단 |
 | `cbist_collect.py` | 충북과학기술혁신원 사업공고(cbist.or.kr mncd=1131) — 지난주 등록분 본문·첨부 수집. NTIS 수집기의 추출 로직 재사용 |
 | `boards_collect.py` | 게시판형 공고 수집기 `--site riia\|mss\|bizinfo\|bizinfo_other` — 충북 지역혁신클러스터(cb.riia.or.kr), 중기부 사업공고(mss.go.kr cbIdx=310), 기업마당 지원사업(충북·충남 / 그 외 14개 시·도, 접수중). 등록분 본문·첨부 수집, `--dedupe`로 다른 소스·seen.json과 제목이 같은 재게시 공고 제외 |
 | `bizinfo_keywords.txt` | 기업마당 타지역(`bizinfo_other`) 공고명 1차 필터 포함/제외 키워드 |
