@@ -410,8 +410,16 @@ def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str, n_
                      "\n".join(f"- {k}: {v}" for k, v in r.items() if v not in (None, "", "null") and not k.startswith("ntceSpec")), ""]
         att_brief, att_text = attachment_sections(it["attachments"], excerpt=g2b_excerpt, heading="입찰공고서 참가자격 발췌")
         ov_name, ov = task_overview(it["attachments"])
-        overview = ([f"## 과업 개요 ({ov_name} 앞부분)", "", ov, ""] if ov
-                    else ["## 과업 개요", "", "(공고서·제안요청서 텍스트 없음 — 과업 내용 확인 불가)", ""])
+        spec_names = [a["name"] for a in it["attachments"] if OVERVIEW_DOC.search(a["name"])]
+        if spec_names and not OVERVIEW_DOC.search(ov_name or ""):
+            # 과업지시서는 첨부됐지만 스캔본 등이라 못 읽음 → 사람이 열어보면 되므로 조건부 (6-3)
+            overview = [f"## 과업 개요 — ⚠ 과업지시서 첨부됐으나 읽지 못함 ({', '.join(spec_names)})", "", ov or "(텍스트 없음)", ""]
+        elif not ov:
+            overview = ["## 과업 개요 — ⚠ 제안요청서·과업지시서 없음", "", "(공고서·제안요청서 텍스트 없음 — 과업 내용 확인 불가)", ""]
+        elif OVERVIEW_DOC.search(ov_name):
+            overview = [f"## 과업 개요 ({ov_name})", "", ov, ""]
+        else:   # 입찰공고서만 있음 → company_profile.md 6-2 (b): 과업 불명확으로 부적합
+            overview = [f"## 과업 개요 — ⚠ 제안요청서·과업지시서 없음, 입찰공고서({ov_name}) 앞부분만", "", ov, ""]
         (out / "brief" / f"{it['uid']}.md").write_text("\n".join(parts + overview + att_brief), "utf-8")
         (out / "text" / f"{it['uid']}.md").write_text("\n".join(parts + raw_lines + att_text), "utf-8")
 
