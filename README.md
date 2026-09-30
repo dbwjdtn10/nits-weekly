@@ -71,5 +71,5 @@ claude.ai/code → 입력창 위 구름 아이콘(환경 이름) → Default 위
 - 상세: `GET /rndgate/eg/un/ra/view.do?roRndUid=<uid>&flag=rndList`
 - 첨부: `POST /rndgate/eg/cmm/file/download.do` — `wfUid`, `roTextUid` (상세 페이지의 `fn_fileDownload(...)` 인자)
 - RSS(`rss.do`)는 로그인 필요 → 사용하지 않음
-- 수집기는 마감 지난 공고와 `state/seen.json`에 있는 공고를 자동 제외 (`--include-closed`, `--no-seen`으로 해제)
+- 수집기는 마감 지난 공고, `state/seen.json`에 있는 공고, 나라장터 수의계약 공고를 자동 제외 (`--include-closed`, `--no-seen`, `--include-private`로 해제)
 - 페이지 구조가 바뀌면 `ntis_collect.py`의 `ROW_RE`, `fetch_detail()` 정규식을 수정

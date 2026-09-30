@@ -461,6 +461,7 @@ def main() -> int:
     ap.add_argument("--max-price", type=float, default=3_000_000_000, help="기초금액 상한(원). 초과 공고 제외")
     ap.add_argument("--no-seen", action="store_true", help="state/seen.json 무시(이미 판정한 공고도 수집)")
     ap.add_argument("--include-closed", action="store_true", help="입찰마감 지난 공고도 수집")
+    ap.add_argument("--include-private", action="store_true", help="수의계약 공고도 수집")
     ap.add_argument("--no-attach", action="store_true", help="입찰공고서 다운로드/추출 생략")
     ap.add_argument("--key", default=os.environ.get("G2B_SERVICE_KEY", ""))
     a = ap.parse_args()
@@ -493,9 +494,12 @@ def main() -> int:
         if no not in by_no or d["uid"] > by_no[no]["uid"]:
             by_no[no] = d
     seen = set() if a.no_seen else seen_uids("g2b")
-    items, n_seen, n_closed = [], 0, 0
+    items, n_seen, n_closed, n_private = [], 0, 0, 0
     for d in by_no.values():
         if "취소" in d["form"]:   # 취소공고 제외
+            continue
+        if not a.include_private and "수의" in d["method"]:   # 수의계약(수의시담·소액수의견적 포함) 제외
+            n_private += 1
             continue
         if d["uid"] in seen or d["uid"].rsplit("-", 1)[0] in {u.rsplit("-", 1)[0] for u in seen}:
             n_seen += 1
@@ -520,7 +524,7 @@ def main() -> int:
         d["dday"] = dday(d["end"])
         items.append(d)
     items.sort(key=lambda x: x["end"])
-    log(f"이미 판정한 공고 제외 {n_seen}건, 마감 지난 공고 제외 {n_closed}건")
+    log(f"수의계약 제외 {n_private}건, 이미 판정한 공고 제외 {n_seen}건, 마감 지난 공고 제외 {n_closed}건")
     if not a.no_attach:
         for i, d in enumerate(items, 1):
             log(f"[{i}/{len(items)}] 공고서 수집 {d['uid']} {d['title'][:40]}")
