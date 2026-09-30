@@ -216,15 +216,18 @@ QUAL_HIGH = re.compile(r"(직접생산|소프트웨어사업자|정보통신공�
 QUAL_GENERIC = re.compile(r"(입찰참가자격|참가자격|참가 자격|입찰에 참가할 수 있는 자|제한사항|참가제한|참여제한|참여자격)")
 
 
-DOC_MAIN = re.compile(r"공고|제안요청|RFP|과업|시방|규격", re.I)
+# 과업 설명 문서: 기관마다 이름이 달라 넓게 잡는다 (2026-09-30, 2주치 4,133건 첨부파일명 점검 — "제안 요청서" 띄어쓰기, 사양서, 사업설명서 등)
+SPEC_DOC = re.compile(r"제안\s*요청|과업|RFP|시방|규격|사양서|(용역|사업|제안)\s*(설명|안내)서|작업\s*지시|지침서|요구\s*사항|발주\s*도서", re.I)
+DOC_MAIN = re.compile(r"공고|" + SPEC_DOC.pattern, re.I)
 DOC_BOILERPLATE = re.compile(r"서약|계약서|일반조건|특수조건|동의서|유의사항|개인정보|양식|서식|위임장|확약|신청서")
 
 
-def download_notice_docs(d: dict, dest_dir: Path, max_files: int = 4) -> None:
-    """입찰공고서·제안요청서·과업지시서(PDF/HWP/HWPX/ZIP 등) 최대 4개를 내려받아 텍스트 추출.
+def download_notice_docs(d: dict, dest_dir: Path, max_files: int = 6) -> None:
+    """입찰공고서·제안요청서·과업지시서(PDF/HWP/HWPX/ZIP 등) 최대 6개를 내려받아 텍스트 추출.
     공고·과업 문서를 우선하고 서약서·계약조건 같은 공통 서식은 받지 않으며, 같은 문서의 HWP/PDF 중복은 하나만."""
     cands = [a for a in d["attachments"] if Path(a["name"]).suffix.lower() in TEXT_EXTS | {".zip"}
              and (DOC_MAIN.search(a["name"]) or not DOC_BOILERPLATE.search(a["name"]))]
+    # 공고서(참가자격)·과업 설명 문서(과업 내용) 우선. 둘은 같은 순위 — 한쪽만 받으면 판정이 안 된다
     cands.sort(key=lambda a: (0 if DOC_MAIN.search(a["name"]) else 1, 0 if a["name"].lower().endswith(".pdf") else 1))
     picked, stems = [], set()
     for a in cands:
@@ -287,7 +290,6 @@ def g2b_excerpt(text: str) -> str:
     return qual_excerpt(text) or make_brief(text, head=0)[:3000]
 
 
-OVERVIEW_DOC = re.compile(r"제안요청|과업|RFP|시방|규격", re.I)
 # 우선순위: 과업 내용·범위(무엇을 만드는지) > 사업 개요·목적(왜 하는지)
 OVERVIEW_HEADS = [
     re.compile(r"(과업|사업|용역)\s*(내용|범위)|주요\s*과업|세부\s*과업|요구\s*사항"),
@@ -305,7 +307,8 @@ def _is_toc(t: str, pos: int) -> bool:
     lines = [ln.strip() for ln in t[pos:pos + 500].splitlines() if ln.strip()][:7]
     if "· · · ·" in t[pos:pos + 300] or sum(bool(TOC_LINE.search(ln)) for ln in lines) >= 3:
         return True
-    return len(lines) >= 5 and sum(len(ln) <= 30 for ln in lines) >= len(lines) - 1
+    # '1. 과업 대상 / 2. 과업 범위 / 3. …'처럼 번호 붙은 짧은 줄이 이어지면 목차 (표 칸의 짧은 줄은 번호가 없어 제외)
+    return sum(bool(re.match(r"(\d{1,2}|[ⅠⅡⅢⅣⅤⅥⅦ]|[가-하])[.)]", ln)) and len(ln) <= 30 for ln in lines) >= 4
 
 
 def _is_heading(t: str, pos: int) -> bool:
@@ -319,25 +322,47 @@ def _is_heading(t: str, pos: int) -> bool:
     return pos - ls <= 12 and len(line.strip()) <= 40
 
 
-def task_overview(atts: list[dict], limit: int = 2000) -> tuple[str, str]:
-    """제안요청서·과업지시서(없으면 입찰공고서)의 과업 내용·범위 구간. 1단계 방향 판정용.
-    목차에 나온 제목은 건너뛰고, 본문에 처음 나오는 '과업 내용/범위'(없으면 '사업 개요/목적')부터 자른다."""
+TASK_TERMS = re.compile(r"산출물|납품|요구\s*사항|기능|구축|개발|제작|콘텐츠|시스템|수량|구성|화면|모듈|시나리오|데이터|설치|장비|플랫폼|영상|교육|범위")
+BOILER_TERMS = re.compile(r"청렴계약|입찰참가자격|참가자격|낙찰자|개찰|계약보증|입찰보증|전자입찰|부정당|공동수급|하도급|지체상금|입찰서|가격입찰|적격심사")
+
+
+def _task_score(t: str, pos: int) -> tuple[int, int]:
+    """제목 위치부터 2,500자 구간의 (과업 단어 수, 공고 공통 문구 수)."""
+    w = t[pos:pos + 2500]
+    return len(TASK_TERMS.findall(w)), len(BOILER_TERMS.findall(w))
+
+
+def task_overview(atts: list[dict], limit: int = 2000) -> tuple[str, str, bool]:
+    """첨부 문서 '내용'에서 과업 내용·범위 구간을 찾는다 (파일명은 보지 않음). 1단계 방향·명확성 판정용.
+    반환: (문서명, 발췌, 과업 내용 확인 여부).
+    모든 문서에서 '과업 내용/범위/요구사항'(없으면 '사업 개요/목적') 제목을 찾아, 제목 뒤 구간에 과업 단어가 많고
+    공고 공통 문구(청렴계약·입찰참가자격·개찰…)가 적은 곳을 고른다. 목차·계약조항 속 단어는 제목으로 치지 않는다.
+    못 찾으면 입찰공고서의 '입찰에 부치는 사항/용역명'부터 보여주고 확인 여부 False."""
     docs = [(label, t) for a in atts for label, t, form in attachment_docs(a) if not form and not FAILED_TEXT.match(t)]
-    for label, t in sorted(docs, key=lambda d: not OVERVIEW_DOC.search(d[0])):
-        start = 0
-        if OVERVIEW_DOC.search(label):
-            for rx in OVERVIEW_HEADS:
-                hit = next((m.start() for m in rx.finditer(t) if _is_heading(t, m.start()) and not _is_toc(t, m.start())), None)
-                if hit is not None:
-                    start = hit
-                    break
-        else:   # 입찰공고서: 청렴계약 등 머리 문구를 건너뛰고 '입찰에 부치는 사항/용역명'부터 (용역명·기간·예산)
-            m = NOTICE_START.search(t)
-            start = m.start() if m else 0
-        lines = [ln.strip() for ln in t[start:start + limit * 2].splitlines()]
-        body = "\n".join(ln for ln in lines if not NOISE_LINE.match(ln))
-        return label, body[:limit].strip()
-    return "", ""
+    best = None   # (점수, 문서명, 텍스트, 위치)
+    for label, t in docs:
+        for bonus, rx in ((5, OVERVIEW_HEADS[0]), (0, OVERVIEW_HEADS[1])):
+            for m in rx.finditer(t):
+                if not _is_heading(t, m.start()) or _is_toc(t, m.start()):
+                    continue
+                task, boiler = _task_score(t, m.start())
+                if task < 6 or task <= 2 * boiler:   # 과업 단어가 적거나 공고 문구가 섞인 구간은 과업 설명이 아님
+                    continue
+                score = task - 2 * boiler + bonus
+                if best is None or score > best[0]:
+                    best = (score, label, t, m.start())
+    found = best is not None
+    if found:
+        _, label, t, start = best
+    elif docs:
+        label, t = next(((lb, tx) for lb, tx in docs if NOTICE_START.search(tx)), docs[0])
+        m = NOTICE_START.search(t)
+        start = m.start() if m else 0
+    else:
+        return "", "", False
+    lines = [ln.strip() for ln in t[start:start + limit * 2].splitlines()]
+    body = "\n".join(ln for ln in lines if not NOISE_LINE.match(ln))
+    return label, body[:limit].strip(), found
 
 
 def dday(end: str) -> str:
@@ -409,17 +434,17 @@ def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str, n_
         raw_lines = ["## 원본 필드", "",
                      "\n".join(f"- {k}: {v}" for k, v in r.items() if v not in (None, "", "null") and not k.startswith("ntceSpec")), ""]
         att_brief, att_text = attachment_sections(it["attachments"], excerpt=g2b_excerpt, heading="입찰공고서 참가자격 발췌")
-        ov_name, ov = task_overview(it["attachments"])
-        spec_names = [a["name"] for a in it["attachments"] if OVERVIEW_DOC.search(a["name"])]
-        if spec_names and not OVERVIEW_DOC.search(ov_name or ""):
-            # 과업지시서는 첨부됐지만 스캔본 등이라 못 읽음 → 사람이 열어보면 되므로 조건부 (6-3)
-            overview = [f"## 과업 개요 — ⚠ 과업지시서 첨부됐으나 읽지 못함 ({', '.join(spec_names)})", "", ov or "(텍스트 없음)", ""]
-        elif not ov:
-            overview = ["## 과업 개요 — ⚠ 제안요청서·과업지시서 없음", "", "(공고서·제안요청서 텍스트 없음 — 과업 내용 확인 불가)", ""]
-        elif OVERVIEW_DOC.search(ov_name):
+        ov_name, ov, found = task_overview(it["attachments"])
+        # 내려받았는데 텍스트를 (거의) 못 뽑은 첨부 (스캔 PDF·이미지로 된 HWPX 등)
+        unread = [a["name"] for a in it["attachments"]
+                  if a.get("path") and sum(len(t) for _, t, _ in attachment_docs(a)) < 300]
+        if found:
             overview = [f"## 과업 개요 ({ov_name})", "", ov, ""]
-        else:   # 입찰공고서만 있음 → company_profile.md 6-2 (b): 과업 불명확으로 부적합
-            overview = [f"## 과업 개요 — ⚠ 제안요청서·과업지시서 없음, 입찰공고서({ov_name}) 앞부분만", "", ov, ""]
+        elif unread:   # 과업 내용이 못 읽은 첨부에 있을 수 있음 → 사람이 열어보면 되므로 조건부 (6-3)
+            overview = [f"## 과업 개요 — ⚠ 과업 내용을 찾지 못함, 읽지 못한 첨부 있음 ({', '.join(unread)})", "", ov or "(텍스트 없음)", ""]
+        else:   # 첨부 어디에도 과업 내용·범위가 없음 (공고서 문구뿐) → company_profile.md 6-2 (b): 부적합
+            where = f", {ov_name} 앞부분" if ov_name else ""
+            overview = [f"## 과업 개요 — ⚠ 과업 내용 없음 (첨부 문서에서 과업 내용·범위를 찾지 못함{where})", "", ov or "(첨부 텍스트 없음)", ""]
         (out / "brief" / f"{it['uid']}.md").write_text("\n".join(parts + overview + att_brief), "utf-8")
         (out / "text" / f"{it['uid']}.md").write_text("\n".join(parts + raw_lines + att_text), "utf-8")
 
