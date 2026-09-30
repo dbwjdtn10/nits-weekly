@@ -19,6 +19,7 @@
 사용:
   python discord_post.py --out out                 # 적합·조건부 링크 목록 + 부적합은 txt 파일로 첨부
   python discord_post.py --out out --dry-run       # 콘솔 출력만
+  ※ 적합·조건부가 0건이면 아무것도 보내지 않음 (--send-empty 로 헤더·부적합 파일 발송)
   python discord_post.py --out out --format embed  # 상세 embed + 첨부파일 형식
 """
 from __future__ import annotations
@@ -141,6 +142,7 @@ def main() -> int:
     ap.add_argument("--send", default="적합,조건부", help="보낼 판정 (콤마 구분). 기본: 적합,조건부 (조건부도 적합으로 취급)")
     ap.add_argument("--format", default="links", choices=["links", "embed"], help="links: 공고당 한 줄 링크(기본) / embed: 상세 embed + 첨부")
     ap.add_argument("--no-rejected", action="store_true", help="부적합 목록 파일 첨부 생략")
+    ap.add_argument("--send-empty", action="store_true", help="제안 가능 0건이어도 헤더(+부적합 파일) 발송. 기본은 발송 생략")
     ap.add_argument("--webhook", default=os.environ.get("DISCORD_WEBHOOK_URL", ""))
     ap.add_argument("--title", default="NTIS 국가R&D통합공고 일일 리포트", help="헤더 제목")
     a = ap.parse_args()
@@ -168,6 +170,11 @@ def main() -> int:
     n_cond = sum(1 for r in judged if r.get("verdict") == "조건부")
     rejected = [r for r in judged if r.get("verdict") == "부적합"]
     unjudged = [u for u in items if u not in results]
+
+    # 제안 가능한 공고가 없으면 아무것도 보내지 않는다 (일일 실행이라 빈 리포트가 채널을 덮지 않도록)
+    if not picked and not a.send_empty:
+        log(f"발송 생략: 제안 가능 0건 (수집 {len(items)}건, 부적합 {len(rejected)}건)")
+        return 0
 
     # 1) 헤더 (부적합은 언급하지 않음)
     head = f"## 📋 {a.title} ({date_from} ~ {date_to})\n수집 **{len(items)}건** 중 제안 가능 **{len(picked)}건**"

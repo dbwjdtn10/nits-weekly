@@ -43,8 +43,7 @@ python boards_collect.py --site bizinfo_other --days 4 --out out/bizinfo_other -
 - bizinfo_other: 기업마당 지원사업 중 **그 외 14개 시·도**, 접수중. 대부분 해당 지역 소상공인 전용이라 `bizinfo_keywords.txt`로 공고명 1차 필터를 거친 것만 남습니다.
 - 기업마당은 충북과기혁신원·중기부 공고를 재게시하므로 **이 순서대로** 실행해야 `--dedupe`가 앞 소스와 `state/seen.json`의 같은 공고를 걸러냅니다. 한 사이트가 실패해도 나머지는 진행하고 최종 응답에 적으세요.
 
-**수집 0건인 소스는 판정·발송·seen 기록을 모두 생략합니다.** 모든 소스가 0건(또는 실패)이면 판정 없이 Discord에 한 줄만 보내고 4절 없이 종료하세요:
-`python -c "import os,requests; requests.post(os.environ['DISCORD_WEBHOOK_URL'], json={'content': '📋 오늘 신규 공고 없음 (<수집 기간>)'})"` (실패한 소스가 있으면 그 이름도 함께)
+**수집 0건인 소스는 판정·발송·seen 기록을 모두 생략합니다.** 수집 0건이나 "신규 공고 없음"은 Discord에 알리지 마세요. 모든 소스가 **실패**(0건이 아니라 오류)한 경우에만 Discord로 오류 내용을 보내고 종료합니다.
 
 ## 2. 판정
 1. `company_profile.md`를 먼저 정독하세요. 이것이 유일한 판정 기준입니다.
@@ -72,7 +71,7 @@ python boards_collect.py --site bizinfo_other --days 4 --out out/bizinfo_other -
 - `budget`: 공고문에서 읽은 지원규모/예산/기초금액을 짧게 (예: "과제당 2억 이내", "총 10억", "기초금액 1.55억"). 수집기가 못 채운 NTIS·충북과기혁신원·기업마당·중기부·지역혁신클러스터 공고는 **반드시** 적을 것 — Discord 링크 줄에 표시된다.
 - `score`: 0~100 제안 추천도. `conditions`: 신청자격·규모·마감·제출처 등 담당자가 바로 봐야 할 핵심 3~6개. `reason`: 1~3문장, 근거가 된 공고문 문구를 짧게 인용.
 
-## 3. 발송 (수집 1건 이상인 소스만)
+## 3. 발송 (수집 1건 이상인 소스만 실행)
 ```
 python discord_post.py --out out --title "NTIS 국가R&D통합공고 일일 리포트"
 python discord_post.py --out out/g2b --title "나라장터 입찰공고 일일 리포트"
@@ -82,6 +81,7 @@ python discord_post.py --out out/mss --title "중소벤처기업부 사업공고
 python discord_post.py --out out/bizinfo --title "기업마당(충북·충남) 지원사업 일일 리포트"
 python discord_post.py --out out/bizinfo_other --title "기업마당(타지역) 지원사업 일일 리포트"
 ```
+- **적합·조건부가 0건인 소스는 `discord_post.py`가 알아서 아무것도 보내지 않습니다** (헤더·부적합 파일 모두 생략). 따로 "0건" 알림을 보내지 마세요.
 - `DISCORD_WEBHOOK_URL` 환경변수를 사용합니다. **적합·조건부 공고**는 한 줄 링크 목록(제목 링크 · 마감 · 예산 · 기관)으로, **부적합은 텍스트 파일(부적합_기간.txt)로 리포트 메시지에 첨부**되어 필요할 때만 열어볼 수 있습니다. 첨부파일은 보내지 않습니다.
 - 전송 로그에 오류가 있으면 `--no-files`로 한 번 더 시도하세요.
 
