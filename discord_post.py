@@ -22,7 +22,8 @@
 환경변수:
   DISCORD_WEBHOOK_URL   (필수)
 사용:
-  python discord_post.py --out out                 # 적합만 링크 목록 + 조건부·부적합은 판정별 txt 파일로 첨부
+  python discord_post.py --out out                 # 적합만 카드 + 수집기가 받은 공고문·과업 문서 첨부(같은 문서는 PDF만)
+                                                   # 조건부·부적합은 판정별 txt 파일로 첨부
   python discord_post.py --out out --dry-run       # 콘솔 출력만
   ※ 적합이 0건이어도 조건부·부적합이 있으면 헤더 + txt 파일은 발송. 판정 0건이면 아무것도 보내지 않음
   python discord_post.py --out out --format embed  # 상세 embed + 첨부파일 형식
@@ -109,6 +110,37 @@ def end_date(s: str) -> dt.date | None:
 # 검토 카드 항목 (results.json의 card 필드) — 링크를 열지 않고 지원 여부를 정할 수 있게
 CARD_FIELDS = [("make", "📦 만들 것"), ("similar", "🧩 비슷한 실적"), ("period", "🗓 기간"),
                ("eval", "📝 평가·제출"), ("history", "🏁 과거 유사 낙찰"), ("checks", "⚠ 확인할 점")]
+
+
+MAX_MSG_FILES = 9 * 1024 * 1024   # 메시지 하나에 붙이는 공고 첨부 합계 (Discord 무료 서버 업로드 한도 10MB)
+DOC_SKIP = re.compile(r"서약|계약\s*(서|조건)|일반조건|특수조건|동의서|개인정보|위임장|확약")
+
+
+def doc_files(it: dict, out: Path) -> tuple[list[Path], list[dict]]:
+    """적합 카드에 함께 보낼 첨부: 수집기가 이미 내려받은 공고문·과업 문서 (링크를 열지 않고 받을 수 있게).
+    같은 문서의 HWP/PDF는 PDF 하나만, 서약서·계약조건 같은 공통 서식은 뺀다.
+    반환: (붙일 파일, 용량 때문에 못 붙인 첨부 — 링크로 안내)"""
+    cands = []
+    for att in it.get("attachments", []):
+        if not att.get("path") or DOC_SKIP.search(att.get("name", "")):
+            continue
+        p = Path(att["path"])
+        if not p.is_file():
+            p = out / att["path"]   # 수집기에 따라 out 기준 상대경로
+        if p.is_file():
+            cands.append((att, p))
+    pdf_stems = {p.stem for _, p in cands if p.suffix.lower() == ".pdf"}
+    files, too_big, total = [], [], 0
+    for att, p in cands:
+        if p.suffix.lower() != ".pdf" and p.stem in pdf_stems:
+            continue
+        size = p.stat().st_size
+        if total + size > MAX_MSG_FILES or len(files) >= MAX_FILES_PER_MSG - 2:   # 조건부·부적합 txt 자리
+            too_big.append(att)
+            continue
+        files.append(p)
+        total += size
+    return files, too_big
 
 
 def is_repost(it: dict, r: dict) -> bool:
@@ -241,15 +273,20 @@ def main() -> int:
             # 출력 순서: 디데이 / 마감일자 / 금액 / 공고업체
             return " / ".join([f"**{dday}**", end_txt, trunc(budget, 40) or "금액 미정", agency])
 
-        lines = []
+        lines: list[str | tuple[str, list[Path]]] = []   # 공고 첨부를 붙일 블록은 (텍스트, 파일)
         for r in picked:
             it = items.get(str(r["uid"]))
             if not it:
                 continue
             if r.get("card"):
-                lines.append(card_text(it, r, meta_line(it, r)))
+                txt = card_text(it, r, meta_line(it, r))
             else:   # 카드가 없는 판정(이전 형식)은 제목 링크 + 한 줄
-                lines.append(f"• [{trunc(it.get('title','?'), 90)}]({it['ntis_url']})\n　{meta_line(it, r)}")
+                txt = f"• [{trunc(it.get('title','?'), 90)}]({it['ntis_url']})\n　{meta_line(it, r)}"
+            docs, too_big = ([], []) if a.no_files else doc_files(it, out)
+            if too_big:
+                txt += "\n> 📎 용량이 커서 링크로: " + " · ".join(
+                    f"[{trunc(x['name'], 40)}]({x['url']})" if x.get("url") else trunc(x["name"], 40) for x in too_big[:5])
+            lines.append((txt, docs) if docs else txt)
         # 이미 보낸 공고: 사전규격 → 본공고(입찰 마감 확정)와 재공고·정정공고를 나눠 한 줄씩
         for from_pre, header in ((True, "📢 **본공고 올라옴** — 사전규격으로 먼저 보낸 공고 (입찰 마감 확정, 바뀐 점만 확인)"),
                                  (False, "🔁 **다시 올라온 공고** — 이미 적합으로 보낸 공고의 재공고·정정공고 (바뀐 점만 확인)")):
@@ -280,17 +317,25 @@ def main() -> int:
             f = out / f"{verdict}_{date_from}_{date_to}.txt"
             f.write_text("\n".join(rl), "utf-8")
             files.append(f)
-        chunks: list[str] = []
+        # 2000자 단위로 나눠 보내되, 공고 첨부가 있는 카드는 그 카드에서 메시지를 끊어 파일이 카드 바로 아래 붙게 한다
+        chunks: list[tuple[str, list[Path]]] = []
         buf = head
         for ln in lines:
-            if len(buf) + len(ln) + 2 > 1900:
-                chunks.append(buf)
+            txt, docs = ln if isinstance(ln, tuple) else (ln, [])
+            if len(buf) + len(txt) + 2 > 1900:
+                chunks.append((buf, []))
                 buf = ""
-            buf += ("\n\n" + ln) if buf else ln
-        chunks.append(buf)
-        for k, c in enumerate(chunks):
-            last = k == len(chunks) - 1
-            send(a.webhook, {"content": c, "allowed_mentions": {"parse": []}}, files if (last and files) else None, dry=a.dry_run)
+            buf += ("\n\n" + txt) if buf else txt
+            if docs:
+                chunks.append((buf, docs))
+                buf = ""
+        if buf or not chunks:
+            chunks.append((buf, []))
+        if files:   # 조건부·부적합 txt는 마지막 메시지에
+            c, docs = chunks[-1]
+            chunks[-1] = (c, docs + files)
+        for c, fs in chunks:
+            send(a.webhook, {"content": c, "allowed_mentions": {"parse": []}}, fs or None, dry=a.dry_run)
         log(f"완료: 적합 {len(picked)}건 + 재공고 {len(reposts)}건 발송 (첨부파일: 조건부 {n_cond}, 부적합 {len(rejected)})")
         return 0
 
