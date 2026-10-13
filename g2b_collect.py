@@ -384,6 +384,8 @@ def default_range(days: int | None) -> tuple[str, str]:
 # --------------------------------------------------------------------------- output
 def repost_line(it: dict) -> str:
     p = it["repost_of"]
+    if p.get("source") == "g2b_pre":
+        return f"- 📢 사전규격의 본공고: {p['judged_at']}에 사전규격으로 판정한 공고({p['uid']}, {p['verdict']})의 본공고 「{p['title']}」"
     return f"- 🔁 재공고: {p['judged_at']}에 판정한 공고({p['uid']}, {p['verdict']})와 같은 공고 「{p['title']}」"
 
 
@@ -528,9 +530,11 @@ def main() -> int:
             pass
         d["keywords"] = hit
         # 공고번호가 바뀐 재공고·정정공고(이전 공고번호 또는 제목이 같은 공고)를 이미 판정했으면 표시 → Discord에서 "다시 올라온 공고"로 한 줄만
-        prev = None if a.no_seen else find_seen("g2b", d["title"], tuple(x for x in [d["raw"].get("befBidBbancNo") or ""] if x))
+        # 사전규격(g2b_prespec_collect.py)으로 먼저 판정한 공고의 본공고도 같은 방식으로 연결 (bfSpecRgstNo)
+        nums = tuple(x for x in [d["raw"].get("befBidBbancNo") or "", d["raw"].get("bfSpecRgstNo") or ""] if x)
+        prev = None if a.no_seen else find_seen(("g2b", "g2b_pre"), d["title"], nums)
         if prev:
-            d["repost_of"] = {k: prev.get(k, "") for k in ("uid", "judged_at", "verdict", "title")}
+            d["repost_of"] = {k: prev.get(k, "") for k in ("source", "uid", "judged_at", "verdict", "title")}
         if not d["end"]:
             d["end"] = d["open_date"]
         d["dday"] = dday(d["end"])

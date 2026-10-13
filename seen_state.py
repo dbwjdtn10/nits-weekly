@@ -65,17 +65,17 @@ def same_title(a: tuple[frozenset, str], b: tuple[frozenset, str]) -> bool:
     return 2 * len(ba & bb) / (len(ba) + len(bb)) >= 0.8   # Dice 계수: 어순이 바뀌어도 잡힌다
 
 
-def find_seen(source: str, title: str, numbers: tuple[str, ...] = (), path: Path = DEFAULT_PATH) -> dict | None:
-    """이미 판정한 같은 공고(재공고·정정공고로 번호가 바뀐 것 포함)의 seen 기록. 없으면 None.
-    numbers: 이 공고가 가리키는 이전 공고번호들 (나라장터 befBidBbancNo 등) — uid 앞부분과 일치하면 같은 공고."""
-    bucket = load_seen(path).get(source) or {}
+def find_seen(sources: tuple[str, ...], title: str, numbers: tuple[str, ...] = (), path: Path = DEFAULT_PATH) -> dict | None:
+    """이미 판정한 같은 공고(재공고·정정공고로 번호가 바뀐 것, 사전규격 → 본공고 포함)의 seen 기록. 없으면 None.
+    numbers: 이 공고가 가리키는 이전 번호들 (나라장터 befBidBbancNo·bfSpecRgstNo 등) — uid 앞부분과 일치하면 같은 공고."""
+    data = load_seen(path)
     key = title_key(title)
-    hits = [(uid, v) for uid, v in bucket.items()
+    hits = [(src, uid, v) for src in sources for uid, v in (data.get(src) or {}).items()
             if (numbers and uid.rsplit("-", 1)[0] in numbers) or same_title(key, title_key(v.get("title", "")))]
     if not hits:
         return None
-    uid, v = min(hits, key=lambda h: h[1].get("judged_at", ""))   # 처음 판정(발송)한 기록
-    return {"uid": uid, **v}
+    src, uid, v = min(hits, key=lambda h: h[2].get("judged_at", ""))   # 처음 판정(발송)한 기록
+    return {"source": src, "uid": uid, **v}
 
 
 def save_seen(data: dict, path: Path = DEFAULT_PATH) -> None:
@@ -120,7 +120,7 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     m = sub.add_parser("mark")
     m.add_argument("--out", required=True)
-    m.add_argument("--source", required=True, choices=["ntis", "g2b", "cbist", "riia", "mss", "bizinfo", "bizinfo_other"])
+    m.add_argument("--source", required=True, choices=["ntis", "g2b", "g2b_pre", "cbist", "riia", "mss", "bizinfo", "bizinfo_other"])
     m.add_argument("--state", default=str(DEFAULT_PATH))
     p = sub.add_parser("prune")
     p.add_argument("--days", type=int, default=120)

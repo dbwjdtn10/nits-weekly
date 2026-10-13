@@ -55,7 +55,7 @@ def main() -> int:
     d = today_kst()
     body = f"{' · '.join(parts)}건 중 적합 **{n_fit}건**" if parts else "신규 공고 없음"
     if n_repost:
-        body += f" (+ 이미 보낸 공고의 재공고 {n_repost}건)"
+        body += f" (+ 이미 보낸 공고의 본공고·재공고 {n_repost}건)"
     line = f"📋 {d.month}/{d.day} 공고 확인 — {body}"
     if problems:
         line += f" (⚠ {', '.join(problems)})"

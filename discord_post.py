@@ -217,7 +217,7 @@ def main() -> int:
         return 0
 
     # 1) 헤더 — 한 줄로 짧게 (날짜·전체 건수는 daily_summary.py의 요약 줄이 담당)
-    head = f"**{a.title}** — 적합 {len(picked)}건" + (f" (+ 이미 보낸 공고의 재공고 {len(reposts)}건)" if reposts else "")
+    head = f"**{a.title}** — 적합 {len(picked)}건" + (f" (+ 이미 보낸 공고 {len(reposts)}건)" if reposts else "")
 
     # 2-a) links 형식: 공고당 한 줄 (제목 링크 · 마감 · 금액), 2000자 단위로 분할 전송
     if a.format == "links":
@@ -230,12 +230,16 @@ def main() -> int:
 
         def meta_line(it: dict, r: dict) -> str:
             budget = r.get("budget") or it.get("budget") or ""   # Claude가 공고문에서 읽은 예산 우선
+            agency = trunc(it.get("agency") or it.get("dept") or "-", 30)
+            if it.get("source") == "g2b_pre":   # 사전규격: 입찰 마감이 아직 없다
+                return " / ".join([f"**사전규격 · 본공고 전**", f"의견등록 마감 {short_date(it.get('opinion_end', '')) or '-'}",
+                                   trunc(budget, 40) or "금액 미정", agency, f"등록번호 {it['uid']}"])
             d = end_date(it.get("end", ""))
             n = (d - today_kst()).days if d else None
             dday = ("D-Day" if n == 0 else f"D-{n}" if n is not None and n > 0 else f"마감({-n}일 경과)" if n is not None else "마감 미정")
             end_txt = d.strftime("%Y.%m.%d") if d else "-"
             # 출력 순서: 디데이 / 마감일자 / 금액 / 공고업체
-            return " / ".join([f"**{dday}**", end_txt, trunc(budget, 40) or "금액 미정", trunc(it.get("agency") or it.get("dept") or "-", 30)])
+            return " / ".join([f"**{dday}**", end_txt, trunc(budget, 40) or "금액 미정", agency])
 
         lines = []
         for r in picked:
@@ -246,14 +250,18 @@ def main() -> int:
                 lines.append(card_text(it, r, meta_line(it, r)))
             else:   # 카드가 없는 판정(이전 형식)은 제목 링크 + 한 줄
                 lines.append(f"• [{trunc(it.get('title','?'), 90)}]({it['ntis_url']})\n　{meta_line(it, r)}")
-        if reposts:
-            rl = ["🔁 **다시 올라온 공고** — 이미 적합으로 보낸 공고의 재공고·정정공고 (바뀐 점만 확인)"]
-            for r in reposts:
+        # 이미 보낸 공고: 사전규격 → 본공고(입찰 마감 확정)와 재공고·정정공고를 나눠 한 줄씩
+        for from_pre, header in ((True, "📢 **본공고 올라옴** — 사전규격으로 먼저 보낸 공고 (입찰 마감 확정, 바뀐 점만 확인)"),
+                                 (False, "🔁 **다시 올라온 공고** — 이미 적합으로 보낸 공고의 재공고·정정공고 (바뀐 점만 확인)")):
+            group = [r for r in reposts if (items[str(r["uid"])]["repost_of"].get("source") == "g2b_pre") == from_pre]
+            if not group:
+                continue
+            lines.append(header)   # 한 줄씩 넣어야 2000자 분할이 공고 단위로 된다
+            for r in group:
                 it = items[str(r["uid"])]
                 changes = r.get("changes") or ""
-                rl.append(f"• [{trunc(it.get('title','?'), 80)}]({it['ntis_url']}) — {short_date(it['repost_of'].get('judged_at', ''))} 발송분\n"
-                          f"　{meta_line(it, r)}" + (f"\n　변경: {trunc(changes, 160)}" if changes else ""))
-            lines += rl   # 한 줄씩 넣어야 2000자 분할이 공고 단위로 된다
+                lines.append(f"• [{trunc(it.get('title','?'), 80)}]({it['ntis_url']}) — {short_date(it['repost_of'].get('judged_at', ''))} 발송분\n"
+                             f"　{meta_line(it, r)}" + (f"\n　변경: {trunc(changes, 160)}" if changes else ""))
         # 링크로 보내지 않은 판정(조건부·부적합)은 메시지에 줄을 차지하지 않도록 판정별 텍스트 파일로 만들어
         # 마지막 메시지에 첨부 (클릭하면 Discord 안에서 열림)
         files: list[Path] = []

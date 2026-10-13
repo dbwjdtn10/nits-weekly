@@ -24,6 +24,15 @@ python g2b_collect.py --days 4 --out out/g2b
 - 나라장터 **용역 입찰공고**를 공공데이터포털 API로 받아 `g2b_keywords.txt` 키워드로 1차 필터한 결과입니다. 이미 판정한 공고·취소공고·입찰마감 지난 공고는 자동 제외됩니다. `out/g2b/digest.md`(목록), `out/g2b/brief/<uid>.md`(공고별 필드 전체 + 입찰공고서·제안요청서·과업지시서 최대 4개의 앞부분·참가자격 발췌).
 - 키가 없거나 API가 실패하면 이 단계는 건너뛰고, 최종 응답에 건너뛴 이유를 적으세요.
 
+## 1-b2. 나라장터 사전규격 수집 (환경변수 `G2B_SERVICE_KEY`가 있을 때만)
+```
+python g2b_prespec_collect.py --days 4 --out out/g2b_pre
+```
+- 본공고보다 먼저 공개되는 **용역 사전규격**(제안요청서·과업지시서 초안)입니다. 사전규격 → 본공고 간격이 중앙값 8일이라, 여기서 적합을 찾으면 본공고부터 볼 때보다 준비 기간이 약 1.7배 깁니다.
+- `g2b_keywords.txt` 공고명 키워드로 1차 필터(하루 수 건). 이미 판정한 사전규격과 본공고가 이미 게시된 사전규격은 자동 제외. 산출물 형식은 나라장터와 같습니다(`out/g2b_pre/digest.md`, `brief/<등록번호>.md`).
+- 입찰 마감이 아직 없으므로 링크 줄에는 "사전규격 · 본공고 전"과 의견등록 마감이 표시됩니다.
+- 실패하면 이 단계만 건너뛰고 최종 응답에 적으세요.
+
 ## 1-c. 충북과학기술혁신원(CBIST) 사업공고 수집
 ```
 python cbist_collect.py --days 4 --out out/cbist
@@ -55,7 +64,8 @@ python boards_collect.py --site bizinfo_other --days 4 --out out/bizinfo_other -
    - 제안요청서·과업지시서가 첨부되어 있는데 brief 맨 아래 `⚠ 읽지 못한 첨부`에 있어(스캔본 등) 과업·자격을 확정할 수 없으면 `조건부`로 두고, `action`에 "원문 첨부(<파일명>) 직접 확인 필요"라고 적으세요.
 3. 판정은 `적합` / `조건부` / `부적합` 셋 중 하나입니다. **Discord에는 적합만 링크로 나가고 조건부·부적합은 파일로만 첨부**되므로, 적합은 방향·명확성·자격이 모두 확실한 것만 주세요. 애매하면 `조건부`.
 4. 나라장터 공고(`out/g2b/`)는 용역 입찰이므로 2단계에서 **"입찰공고서 참가자격 발췌"의 입찰참가자격(업종 등록·직접생산확인증명·면허·공장등록·지역)과 헤더의 `구매대상물품` 세부품명번호를 company_profile.md 5절과 하나씩 대조**합니다. "다음 자격을 모두 갖춘 자"처럼 AND로 요구하는 자격 중 하나라도 ❌ 미보유이면 부적합, `[담당자 기재]`로 미확인이면 조건부입니다. 기초금액·마감일은 정보로만 전달하고 판정 사유로 쓰지 않습니다.
-5. 결과를 `out/results.json`(NTIS), `out/g2b/results.json`(나라장터), `out/cbist/results.json`(충북과기혁신원), `out/riia/results.json`, `out/mss/results.json`, `out/bizinfo/results.json`, `out/bizinfo_other/results.json`에 각각 다음 형식으로 저장하세요 (모든 uid 포함):
+5. **사전규격**(`out/g2b_pre/`)도 나라장터와 같은 2단계로 판정합니다. 차이점: 입찰 마감·평가방식이 아직 없고, 참가자격이 규격서(제안요청서)에 있으면 company_profile.md 5절과 대조하지만 **규격서에 참가자격이 없으면 그 이유만으로 조건부로 내리지 마세요** — 방향·명확성이 확실하면 적합으로 두고 `card.checks`에 "참가자격은 본공고에서 확인"이라고 적습니다 (본공고가 올라오면 수집기가 연결해 다시 판정되므로). 규격서에 있는 AND 자격 중 ❌ 미보유가 있으면 부적합입니다.
+6. 결과를 `out/results.json`(NTIS), `out/g2b/results.json`(나라장터), `out/g2b_pre/results.json`(나라장터 사전규격), `out/cbist/results.json`(충북과기혁신원), `out/riia/results.json`, `out/mss/results.json`, `out/bizinfo/results.json`, `out/bizinfo_other/results.json`에 각각 다음 형식으로 저장하세요 (모든 uid 포함):
 ```json
 {
   "summary": "이번 수집분 총평 1~2문장 (예: 수집 7건 중 SW/AI 기업이 신청 가능한 공고 1건, 나머지는 대학·수요조사 위주)",
@@ -90,19 +100,20 @@ Discord에는 적합 공고가 링크 대신 **검토 카드**로 나갑니다. 
 - **공고문에 있는 사실만** 짧게 적습니다. 찾지 못한 항목은 `"공고문에서 확인 못 함"`으로 두세요 (추측 금지).
 - `checks`는 판정을 바꾸는 근거가 아니라 **담당자가 준비 여부를 판단할 사실**입니다. 판정 기준(company_profile.md)은 그대로 적용하세요.
 
-### 2-b. 재공고 (나라장터 brief의 `🔁 재공고` 줄)
-- 이전에 판정한 공고가 재공고·정정공고로 번호가 바뀌어 다시 수집된 것입니다. 평소처럼 판정하되, 이전 판정도 참고하세요.
-- 이전 판정이 적합이고 이번에도 적합이면 Discord에는 카드 대신 "다시 올라온 공고" 한 줄로 나갑니다. 이때는 `card` 대신 `changes`에 이번 공고에서 확인되는 변경 사항(공고종류, 정정 사유, 마감일 등)을 한 줄로 적으세요. 확인할 수 없으면 비워 두세요.
+### 2-b. 재공고·사전규격의 본공고 (나라장터 brief의 `🔁 재공고` / `📢 사전규격의 본공고` 줄)
+- 이전에 판정한 공고가 재공고·정정공고로 번호가 바뀌어 다시 수집됐거나, 사전규격으로 판정한 공고의 본공고가 올라온 것입니다. 평소처럼 판정하되, 이전 판정도 참고하세요.
+- 이전 판정이 적합이고 이번에도 적합이면 Discord에는 카드 대신 "다시 올라온 공고" 한 줄로 나갑니다(사전규격의 본공고는 "본공고 올라옴"). 이때는 `card` 대신 `changes`에 이번 공고에서 확인되는 변경 사항(공고종류, 정정 사유, 마감일, 사전규격 대비 바뀐 참가자격·예산 등)을 한 줄로 적으세요. 확인할 수 없으면 비워 두세요.
 
 ## 3. 발송
 먼저 **한 줄 요약**을 보냅니다 (매일 1회, 적합 0건이어도 보냄 — routine이 돌았다는 표시). 수집 0건인 소스는 줄에서 자동으로 빠지고, 수집에 실패한 소스(`announcements.json` 없음)는 "⚠ 수집 실패"로 붙습니다:
 ```
-python daily_summary.py NTIS=out 나라장터=out/g2b 충북과기원=out/cbist 지역혁신클러스터=out/riia 중기부=out/mss "기업마당(충북·충남)=out/bizinfo" "기업마당(타지역)=out/bizinfo_other"
+python daily_summary.py NTIS=out 나라장터=out/g2b 나라장터사전규격=out/g2b_pre 충북과기원=out/cbist 지역혁신클러스터=out/riia 중기부=out/mss "기업마당(충북·충남)=out/bizinfo" "기업마당(타지역)=out/bizinfo_other"
 ```
 그다음 적합 링크를 소스별로 보냅니다 (수집 1건 이상인 소스만 실행):
 ```
 python discord_post.py --out out --title "NTIS"
 python discord_post.py --out out/g2b --title "나라장터"
+python discord_post.py --out out/g2b_pre --title "나라장터 사전규격"
 python discord_post.py --out out/cbist --title "충북과기원"
 python discord_post.py --out out/riia --title "지역혁신클러스터"
 python discord_post.py --out out/mss --title "중기부"
@@ -118,6 +129,7 @@ python discord_post.py --out out/bizinfo_other --title "기업마당(타지역)"
 ```
 python seen_state.py mark --out out --source ntis
 python seen_state.py mark --out out/g2b --source g2b
+python seen_state.py mark --out out/g2b_pre --source g2b_pre
 python seen_state.py mark --out out/cbist --source cbist
 python seen_state.py mark --out out/riia --source riia
 python seen_state.py mark --out out/mss --source mss
