@@ -22,7 +22,7 @@
 환경변수:
   DISCORD_WEBHOOK_URL   (필수)
 사용:
-  python discord_post.py --out out                 # 적합만 카드 + 수집기가 받은 공고문·과업 문서 첨부(같은 문서는 PDF만)
+  python discord_post.py --out out                 # 적합만 카드 + 공고 첨부 전부(HWP·PDF·서식)를 zip 하나로
                                                    # 조건부·부적합은 판정별 txt 파일로 첨부
   python discord_post.py --out out --dry-run       # 콘솔 출력만
   ※ 적합이 0건이어도 조건부·부적합이 있으면 헤더 + txt 파일은 발송. 판정 0건이면 아무것도 보내지 않음
@@ -37,6 +37,8 @@ import os
 import re
 import sys
 import time
+import zipfile
+from difflib import SequenceMatcher
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -112,35 +114,72 @@ CARD_FIELDS = [("make", "📦 만들 것"), ("similar", "🧩 비슷한 실적")
                ("eval", "📝 평가·제출"), ("checks", "⚠ 확인할 점")]
 
 
-MAX_MSG_FILES = 9 * 1024 * 1024   # 메시지 하나에 붙이는 공고 첨부 합계 (Discord 무료 서버 업로드 한도 10MB)
-DOC_SKIP = re.compile(r"서약|계약\s*(서|조건)|일반조건|특수조건|동의서|개인정보|위임장|확약")
+MAX_ZIP = 9 * 1024 * 1024   # 공고 첨부 zip 상한 (Discord 무료 서버 업로드 한도 10MB)
+DOC_MAIN = re.compile(r"공고|제안\s*요청|과업|규격|사양|지침|안내서|설명서")
 
 
-def doc_files(it: dict, out: Path) -> tuple[list[Path], list[dict]]:
-    """적합 카드에 함께 보낼 첨부: 수집기가 이미 내려받은 공고문·과업 문서 (링크를 열지 않고 받을 수 있게).
-    같은 문서의 HWP/PDF는 PDF 하나만, 서약서·계약조건 같은 공통 서식은 뺀다.
-    반환: (붙일 파일, 용량 때문에 못 붙인 첨부 — 링크로 안내)"""
-    cands = []
+def short_name(name: str, title: str) -> str:
+    """첨부 이름에서 공고 제목과 겹치는 부분을 떼어 '1. 입찰공고문(수정).hwp'처럼 짧게 (Discord가 긴 파일명을 잘라 보여서)."""
+    stem, ext = os.path.splitext(name)
+    m = SequenceMatcher(None, stem, title, autojunk=False).find_longest_match(0, len(stem), 0, len(title))
+    short = stem[:m.a] + " " + stem[m.a + m.size:] if m.size >= 8 else stem
+    short = re.sub(r"[\s_]+", " ", short).strip(" _-") or stem
+    return short + ext.lower()
+
+
+def bundle_docs(it: dict, out: Path) -> tuple[Path | None, list[str], list[dict]]:
+    """적합 공고의 첨부 전부(HWP·PDF·서식)를 zip 하나로 묶는다 — 나라장터 '다운로드' 버튼처럼 한 번에 받기.
+    수집기가 판정용으로 고르느라 안 받은 파일(나라장터 HWP본·서식 등)은 여기서 받는다.
+    반환: (zip, zip에 넣은 파일의 짧은 이름, 못 넣은 첨부 — 링크로 안내)"""
+    dest = out / "bundle" / re.sub(r"[^0-9A-Za-z_-]", "_", it["uid"])
+    got, missed = [], []
     for att in it.get("attachments", []):
-        if not att.get("path") or DOC_SKIP.search(att.get("name", "")):
-            continue
-        p = Path(att["path"])
-        if not p.is_file():
-            p = out / att["path"]   # 수집기에 따라 out 기준 상대경로
-        if p.is_file():
-            cands.append((att, p))
-    pdf_stems = {p.stem for _, p in cands if p.suffix.lower() == ".pdf"}
-    files, too_big, total = [], [], 0
-    for att, p in cands:
-        if p.suffix.lower() != ".pdf" and p.stem in pdf_stems:
-            continue
-        size = p.stat().st_size
-        if total + size > MAX_MSG_FILES or len(files) >= MAX_FILES_PER_MSG - 2:   # 조건부·부적합 txt 자리
-            too_big.append(att)
-            continue
-        files.append(p)
-        total += size
-    return files, too_big
+        p = None
+        if att.get("path"):
+            p = Path(att["path"]) if Path(att["path"]).is_file() else out / att["path"]   # 수집기에 따라 out 기준 상대경로
+        if not (p and p.is_file()) and att.get("url"):
+            p = dest / re.sub(r'[\/:*?"<>|]+', "_", att.get("name") or "첨부")[:150]
+            try:
+                if not p.is_file():
+                    r = requests.get(att["url"], headers={"User-Agent": "Mozilla/5.0 X2R-collector/1.0"}, timeout=120)
+                    r.raise_for_status()
+                    if "text/html" in r.headers.get("Content-Type", ""):   # 오류·로그인 페이지
+                        raise ValueError("파일 대신 웹페이지 응답")
+                    dest.mkdir(parents=True, exist_ok=True)
+                    p.write_bytes(r.content)
+            except Exception as e:  # noqa: BLE001
+                log(f"  ! 첨부 받기 실패 {att.get('name')}: {e}")
+                p = None
+        if p and p.is_file():
+            got.append((att, p))
+        else:
+            missed.append(att)
+    if not got:
+        return None, [], missed
+    got.sort(key=lambda x: 0 if DOC_MAIN.search(x[0].get("name", "")) else 1)   # 용량이 넘치면 공고문·과업 문서부터
+    title = it.get("title", "")
+    zpath = out / "bundle" / (re.sub(r'[\/:*?"<>|\[\]()]+', " ", f"첨부{len(got)}개 {title}").strip()[:40].strip() + ".zip")
+    names, total, used = [], 0, set()
+    zpath.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+        for att, p in got:
+            size = p.stat().st_size
+            if total + size > MAX_ZIP:
+                missed.append(att)
+                continue
+            arc = att.get("name") or p.name
+            while arc in used:
+                arc = "_" + arc
+            used.add(arc)
+            z.write(p, arc)
+            names.append(short_name(arc, title))
+            total += size
+    if not names:
+        zpath.unlink()
+        return None, [], missed
+    if len(names) < len(got):   # 일부만 들어갔으면 zip 이름의 개수를 맞춘다
+        zpath = zpath.rename(zpath.with_name(zpath.name.replace(f"첨부{len(got)}개", f"첨부{len(names)}개", 1)))
+    return zpath, names, missed
 
 
 def is_repost(it: dict, r: dict) -> bool:
@@ -282,11 +321,17 @@ def main() -> int:
                 txt = card_text(it, r, meta_line(it, r))
             else:   # 카드가 없는 판정(이전 형식)은 제목 링크 + 한 줄
                 txt = f"• [{trunc(it.get('title','?'), 90)}]({it['ntis_url']})\n　{meta_line(it, r)}"
-            docs, too_big = ([], []) if a.no_files else doc_files(it, out)
-            if too_big:
-                txt += "\n> 📎 용량이 커서 링크로: " + " · ".join(
-                    f"[{trunc(x['name'], 40)}]({x['url']})" if x.get("url") else trunc(x["name"], 40) for x in too_big[:5])
-            lines.append((txt, docs) if docs else txt)
+            zpath, names, missed = (None, [], []) if a.no_files else bundle_docs(it, out)
+            if names:   # Discord는 긴 파일명을 잘라 보이므로 zip 안의 파일을 짧은 이름으로 적는다 (같은 문서의 HWP·PDF는 한 줄)
+                kinds: dict[str, list[str]] = {}
+                for n in names:
+                    stem, ext = os.path.splitext(n)
+                    kinds.setdefault(stem, []).append(ext.lstrip(".") or "?")
+                txt += f"\n> 📎 첨부 {len(names)}개 (zip): " + trunc(" · ".join(f"{s} ({'·'.join(e)})" for s, e in kinds.items()), 400)
+            if missed:
+                txt += "\n> 📎 못 담은 파일은 링크로: " + " · ".join(
+                    f"[{trunc(x['name'], 40)}]({x['url']})" if x.get("url") else trunc(x["name"], 40) for x in missed[:5])
+            lines.append((txt, [zpath]) if zpath else txt)
         # 이미 보낸 공고: 사전규격 → 본공고(입찰 마감 확정)와 재공고·정정공고를 나눠 한 줄씩
         for from_pre, header in ((True, "📢 **본공고 올라옴** — 사전규격으로 먼저 보낸 공고 (입찰 마감 확정, 바뀐 점만 확인)"),
                                  (False, "🔁 **다시 올라온 공고** — 이미 적합으로 보낸 공고의 재공고·정정공고 (바뀐 점만 확인)")):
