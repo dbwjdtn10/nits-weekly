@@ -37,7 +37,7 @@ def now_kst() -> dt.datetime:
     return dt.datetime.now(KST)
 
 from ntis_collect import FAILED_TEXT, TEXT_EXTS, attachment_docs, attachment_sections, extract_attachment, make_brief
-from seen_state import seen_uids
+from seen_state import find_seen, seen_uids
 
 BASE = "http://apis.data.go.kr/1230000/ad/BidPublicInfoService"
 OPS = {
@@ -382,6 +382,11 @@ def default_range(days: int | None) -> tuple[str, str]:
 
 
 # --------------------------------------------------------------------------- output
+def repost_line(it: dict) -> str:
+    p = it["repost_of"]
+    return f"- 🔁 재공고: {p['judged_at']}에 판정한 공고({p['uid']}, {p['verdict']})와 같은 공고 「{p['title']}」"
+
+
 def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str, n_total: int) -> None:
     (out / "brief").mkdir(parents=True, exist_ok=True)
     (out / "text").mkdir(parents=True, exist_ok=True)
@@ -400,6 +405,7 @@ def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str, n_
             f"- 게시 {it['announce_date']} | 입찰마감 {it['end']} ({it['dday']}) | 개찰 {it['open_date']}",
             f"- 금액: {it['budget'] or '-'} | 지역제한: {it['region_limit'] or '-'}",
             f"- 매칭 키워드: {', '.join(it['keywords'])}",
+            *([repost_line(it)] if it.get("repost_of") else []),
             f"- 상세: {it['ntis_url']}",
             f"- 첨부({len(it['attachments'])}): " + ", ".join(a["name"] for a in it["attachments"]),
             f"- 요약본: brief/{it['uid']}.md",
@@ -418,6 +424,7 @@ def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str, n_
             f"- 담당: {it['contact'] or '-'}",
             f"- 상세: {it['ntis_url']}",
             f"- 첨부: " + (", ".join(a["name"] for a in it["attachments"]) or "-"),
+            *([repost_line(it)] if it.get("repost_of") else []),
         ]
         # API 원본 필드는 brief의 절반 이상을 차지하지만 판정에 쓰는 건 몇 개뿐 → brief엔 요약 한 줄, 전체는 text/에만
         r = it["raw"]
@@ -427,6 +434,7 @@ def write_outputs(items: list[dict], out: Path, date_from: str, date_to: str, n_
             f"용역구분: {r['srvceDivNm']}" if r.get("srvceDivNm") else "",
             f"낙찰방법: {r['sucsfbidMthdNm']}" if r.get("sucsfbidMthdNm") else "",
             f"공동수급: {r['cmmnSpldmdMethdNm']}" if r.get("cmmnSpldmdMethdNm") else "",
+            f"평가비율: 기술 {r['techAbltEvlRt']} : 가격 {r['bidPrceEvlRt']}" if r.get("techAbltEvlRt") else "",
             f"지역제한 판단기준: {r['rgnLmtBidLocplcJdgmBssNm']}" if r.get("rgnLmtBidLocplcJdgmBssNm") else "",
             f"구매대상물품: {r['purchsObjPrdctList']}" if r.get("purchsObjPrdctList") else "",
         ] if x))
@@ -519,6 +527,10 @@ def main() -> int:
         except ValueError:
             pass
         d["keywords"] = hit
+        # 공고번호가 바뀐 재공고·정정공고(이전 공고번호 또는 제목이 같은 공고)를 이미 판정했으면 표시 → Discord에서 "다시 올라온 공고"로 한 줄만
+        prev = None if a.no_seen else find_seen("g2b", d["title"], tuple(x for x in [d["raw"].get("befBidBbancNo") or ""] if x))
+        if prev:
+            d["repost_of"] = {k: prev.get(k, "") for k in ("uid", "judged_at", "verdict", "title")}
         if not d["end"]:
             d["end"] = d["open_date"]
         d["dday"] = dday(d["end"])

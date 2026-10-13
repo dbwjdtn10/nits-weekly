@@ -20,7 +20,7 @@ import os
 import sys
 from pathlib import Path
 
-from discord_post import log, send, today_kst
+from discord_post import is_repost, log, send, today_kst
 
 
 def main() -> int:
@@ -30,7 +30,7 @@ def main() -> int:
     ap.add_argument("--webhook", default=os.environ.get("DISCORD_WEBHOOK_URL", ""))
     a = ap.parse_args()
 
-    parts, problems, n_fit = [], [], 0
+    parts, problems, n_fit, n_repost = [], [], 0, 0
     for spec in a.sources:
         label, _, folder = spec.partition("=")
         out = Path(folder)
@@ -38,17 +38,24 @@ def main() -> int:
         if not ann_p.exists():
             problems.append(f"{label} 수집 실패")
             continue
-        n = len(json.loads(ann_p.read_text("utf-8")).get("items", []))
-        if n == 0:
+        ann = {it["uid"]: it for it in json.loads(ann_p.read_text("utf-8")).get("items", [])}
+        if not ann:
             continue
-        parts.append(f"{label} {n}")
+        parts.append(f"{label} {len(ann)}")
         if not res_p.exists():
             problems.append(f"{label} 미판정")
             continue
-        n_fit += sum(1 for r in json.loads(res_p.read_text("utf-8")).get("items", []) if r.get("verdict") == "적합")
+        for r in json.loads(res_p.read_text("utf-8")).get("items", []):
+            if r.get("verdict") == "적합":
+                if is_repost(ann.get(str(r["uid"]), {}), r):
+                    n_repost += 1
+                else:
+                    n_fit += 1
 
     d = today_kst()
     body = f"{' · '.join(parts)}건 중 적합 **{n_fit}건**" if parts else "신규 공고 없음"
+    if n_repost:
+        body += f" (+ 이미 보낸 공고의 재공고 {n_repost}건)"
     line = f"📋 {d.month}/{d.day} 공고 확인 — {body}"
     if problems:
         line += f" (⚠ {', '.join(problems)})"

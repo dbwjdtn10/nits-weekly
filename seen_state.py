@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -35,6 +36,46 @@ def load_seen(path: Path = DEFAULT_PATH) -> dict:
 
 def seen_uids(source: str, path: Path = DEFAULT_PATH) -> set[str]:
     return set((load_seen(path).get(source) or {}).keys())
+
+
+def title_key(t: str) -> tuple[frozenset, str]:
+    """제목 → (차수 집합, 정규화 본문). 말머리·연도·지역명·'모집 공고'·'(수정)' 등을 떼어 게시처·재공고마다 다른 표기를 맞춘다.
+    차수(2차, 3차)는 다른 공고를 가르는 핵심이라 따로 비교한다."""
+    t = re.sub(r"^\s*(\[[^\]]*\]\s*)+", "", t or "")          # [충북] 같은 말머리
+    t = re.sub(r"(20\d{2}|\d{2})\s*년도?", "", t)
+    ords = frozenset(re.findall(r"제?\s*(\d+)\s*차", t))
+    t = re.sub(r"제?\s*\d+\s*차", "", t)
+    t = re.sub(r"충청북도|충청남도|충북|충남|수혜기업|참여기업|모집|재공고|공고|안내|수정|긴급", "", t)
+    return ords, re.sub(r"[^0-9A-Za-z가-힣]", "", t)
+
+
+def _bigrams(s: str) -> set[str]:
+    return {s[i:i + 2] for i in range(len(s) - 1)}
+
+
+def same_title(a: tuple[frozenset, str], b: tuple[frozenset, str]) -> bool:
+    """title_key 둘이 같은 공고인지. 너무 짧은 제목(8자 미만)은 비교하지 않는다."""
+    (oa, na), (ob, nb) = a, b
+    if oa != ob or len(na) < 8 or len(nb) < 8:
+        return False
+    # seen.json 제목은 80자에서 잘려 있고, 재공고는 끝에 '용역'이 붙기도 하므로 앞부분 포함도 같은 공고로 본다
+    if na == nb or (min(len(na), len(nb)) >= 20 and (na.startswith(nb) or nb.startswith(na))):
+        return True
+    ba, bb = _bigrams(na), _bigrams(nb)
+    return 2 * len(ba & bb) / (len(ba) + len(bb)) >= 0.8   # Dice 계수: 어순이 바뀌어도 잡힌다
+
+
+def find_seen(source: str, title: str, numbers: tuple[str, ...] = (), path: Path = DEFAULT_PATH) -> dict | None:
+    """이미 판정한 같은 공고(재공고·정정공고로 번호가 바뀐 것 포함)의 seen 기록. 없으면 None.
+    numbers: 이 공고가 가리키는 이전 공고번호들 (나라장터 befBidBbancNo 등) — uid 앞부분과 일치하면 같은 공고."""
+    bucket = load_seen(path).get(source) or {}
+    key = title_key(title)
+    hits = [(uid, v) for uid, v in bucket.items()
+            if (numbers and uid.rsplit("-", 1)[0] in numbers) or same_title(key, title_key(v.get("title", "")))]
+    if not hits:
+        return None
+    uid, v = min(hits, key=lambda h: h[1].get("judged_at", ""))   # 처음 판정(발송)한 기록
+    return {"uid": uid, **v}
 
 
 def save_seen(data: dict, path: Path = DEFAULT_PATH) -> None:

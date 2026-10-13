@@ -11,9 +11,14 @@
           {"uid": "1277074", "verdict": "적합" | "조건부" | "부적합",
            "score": 0-100, "reason": "판정 사유 1~3문장",
            "conditions": ["핵심 자격/조건 요약", ...],
-           "action": "다음 액션 제안(선택)"}
+           "action": "다음 액션 제안(선택)",
+           "card": {"make": "만들 것", "similar": "비슷한 실적", "period": "기간",
+                    "eval": "평가·제출", "checks": ["확인할 점", ...]},   # 적합만 — 링크 대신 검토 카드로 표시
+           "changes": "재공고에서 바뀐 점(선택)"}
         ]
       }
+  announcements.json 항목에 repost_of(이미 판정한 같은 공고)가 있고 이전·이번 모두 적합이면
+  카드 대신 "다시 올라온 공고" 한 줄로 보낸다.
 환경변수:
   DISCORD_WEBHOOK_URL   (필수)
 사용:
@@ -101,6 +106,36 @@ def end_date(s: str) -> dt.date | None:
         return None
 
 
+# 검토 카드 항목 (results.json의 card 필드) — 링크를 열지 않고 지원 여부를 정할 수 있게
+CARD_FIELDS = [("make", "📦 만들 것"), ("similar", "🧩 비슷한 실적"), ("period", "🗓 기간"),
+               ("eval", "📝 평가·제출"), ("checks", "⚠ 확인할 점")]
+
+
+def is_repost(it: dict, r: dict) -> bool:
+    """이미 적합으로 보낸 공고가 재공고·정정공고로 다시 올라와 또 적합인 경우 → 카드 대신 한 줄."""
+    return (it.get("repost_of") or {}).get("verdict") == "적합" and r.get("verdict") == "적합"
+
+
+def short_date(s: str) -> str:
+    d = end_date(s)
+    return f"{d.month}/{d.day}" if d else s
+
+
+def card_text(it: dict, r: dict, meta: str) -> str:
+    """적합 공고 한 건 = 메시지 블록 하나: 제목 링크, 마감·금액·기관, 카드 항목, 판정 근거."""
+    out = [f"🟢 **[{trunc(it.get('title', '?'), 90)}]({it['ntis_url']})**", meta]
+    card = r.get("card") or {}
+    for key, label in CARD_FIELDS:
+        v = card.get(key)
+        if isinstance(v, list):
+            v = " · ".join(x for x in v if x)
+        if v:
+            out.append(f"> {label}: {trunc(v, 220)}")
+    if r.get("reason"):
+        out.append(f"> 💬 판정 근거: {trunc(r['reason'], 260)}")
+    return "\n".join(out)
+
+
 def build_embed(it: dict, res: dict) -> dict:
     v = res.get("verdict", "부적합")
     g2b = it.get("source") == "g2b"
@@ -166,6 +201,8 @@ def main() -> int:
     judged = sorted(results.values(), key=lambda r: (order.get(r.get("verdict"), 9), -float(r.get("score", 0) or 0)))
     send_set = {v.strip() for v in a.send.split(",") if v.strip()}
     picked = [r for r in judged if r.get("verdict") in send_set]
+    reposts = [r for r in picked if is_repost(items.get(str(r["uid"]), {}), r)]
+    picked = [r for r in picked if r not in reposts]
     n_fit = sum(1 for r in judged if r.get("verdict") == "적합")
     n_cond = sum(1 for r in judged if r.get("verdict") == "조건부")
     rejected = [r for r in judged if r.get("verdict") == "부적합"]
@@ -175,12 +212,12 @@ def main() -> int:
     # 적합이 0건이어도 조건부·부적합이 있으면 헤더(적합 0건) + 판정별 txt 파일은 보낸다.
     attachable = [r for r in judged if r.get("verdict") not in send_set
                   and not (r.get("verdict") == "부적합" and a.no_rejected)]
-    if not picked and not attachable and not a.send_empty:
+    if not picked and not reposts and not attachable and not a.send_empty:
         log(f"발송 생략: 판정 0건 (수집 {len(items)}건)")
         return 0
 
     # 1) 헤더 — 한 줄로 짧게 (날짜·전체 건수는 daily_summary.py의 요약 줄이 담당)
-    head = f"**{a.title}** — 적합 {len(picked)}건"
+    head = f"**{a.title}** — 적합 {len(picked)}건" + (f" (+ 이미 보낸 공고의 재공고 {len(reposts)}건)" if reposts else "")
 
     # 2-a) links 형식: 공고당 한 줄 (제목 링크 · 마감 · 금액), 2000자 단위로 분할 전송
     if a.format == "links":
@@ -190,19 +227,33 @@ def main() -> int:
             d = end_date(it.get("end", ""))
             return (d - today_kst()).days if d else -10_000
         picked.sort(key=days_left, reverse=True)
-        lines = []
-        for r in picked:
-            it = items.get(str(r["uid"]))
-            if not it:
-                continue
+
+        def meta_line(it: dict, r: dict) -> str:
             budget = r.get("budget") or it.get("budget") or ""   # Claude가 공고문에서 읽은 예산 우선
             d = end_date(it.get("end", ""))
             n = (d - today_kst()).days if d else None
             dday = ("D-Day" if n == 0 else f"D-{n}" if n is not None and n > 0 else f"마감({-n}일 경과)" if n is not None else "마감 미정")
             end_txt = d.strftime("%Y.%m.%d") if d else "-"
             # 출력 순서: 디데이 / 마감일자 / 금액 / 공고업체
-            extra = " / ".join([f"**{dday}**", end_txt, trunc(budget, 40) or "금액 미정", trunc(it.get("agency") or it.get("dept") or "-", 30)])
-            lines.append(f"• [{trunc(it.get('title','?'), 90)}]({it['ntis_url']})\n　{extra}")
+            return " / ".join([f"**{dday}**", end_txt, trunc(budget, 40) or "금액 미정", trunc(it.get("agency") or it.get("dept") or "-", 30)])
+
+        lines = []
+        for r in picked:
+            it = items.get(str(r["uid"]))
+            if not it:
+                continue
+            if r.get("card"):
+                lines.append(card_text(it, r, meta_line(it, r)))
+            else:   # 카드가 없는 판정(이전 형식)은 제목 링크 + 한 줄
+                lines.append(f"• [{trunc(it.get('title','?'), 90)}]({it['ntis_url']})\n　{meta_line(it, r)}")
+        if reposts:
+            rl = ["🔁 **다시 올라온 공고** — 이미 적합으로 보낸 공고의 재공고·정정공고 (바뀐 점만 확인)"]
+            for r in reposts:
+                it = items[str(r["uid"])]
+                changes = r.get("changes") or ""
+                rl.append(f"• [{trunc(it.get('title','?'), 80)}]({it['ntis_url']}) — {short_date(it['repost_of'].get('judged_at', ''))} 발송분\n"
+                          f"　{meta_line(it, r)}" + (f"\n　변경: {trunc(changes, 160)}" if changes else ""))
+            lines += rl   # 한 줄씩 넣어야 2000자 분할이 공고 단위로 된다
         # 링크로 보내지 않은 판정(조건부·부적합)은 메시지에 줄을 차지하지 않도록 판정별 텍스트 파일로 만들어
         # 마지막 메시지에 첨부 (클릭하면 Discord 안에서 열림)
         files: list[Path] = []
@@ -232,7 +283,7 @@ def main() -> int:
         for k, c in enumerate(chunks):
             last = k == len(chunks) - 1
             send(a.webhook, {"content": c, "allowed_mentions": {"parse": []}}, files if (last and files) else None, dry=a.dry_run)
-        log(f"완료: {len(lines)}건 링크 발송 (적합 {n_fit} / 첨부파일: 조건부 {n_cond}, 부적합 {len(rejected)})")
+        log(f"완료: 적합 {len(picked)}건 + 재공고 {len(reposts)}건 발송 (첨부파일: 조건부 {n_cond}, 부적합 {len(rejected)})")
         return 0
 
     send(a.webhook, {"content": head, "allowed_mentions": {"parse": []}}, dry=a.dry_run)

@@ -34,7 +34,7 @@ from ntis_collect import (
     attachment_log, attachment_sections, clean_ws, dday, default_range, extract_attachment, get, log, make_brief,
     now_kst, strip_tags,
 )
-from seen_state import load_seen
+from seen_state import load_seen, same_title, title_key
 
 UA_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"}
 
@@ -209,21 +209,6 @@ def fetch_list(site, date_from: str, date_to: str, max_pages: int = 30) -> list[
     return uniq
 
 
-def title_key(t: str) -> tuple[frozenset, str]:
-    """제목 → (차수 집합, 정규화 본문). 말머리·연도·지역명·'모집 공고' 등을 떼어 게시처마다 다른 표기를 맞춘다.
-    차수(2차, 3차)는 다른 공고를 가르는 핵심이라 따로 비교한다."""
-    t = re.sub(r"^\s*(\[[^\]]*\]\s*)+", "", t or "")          # [충북] 같은 말머리
-    t = re.sub(r"(20\d{2}|\d{2})\s*년도?", "", t)
-    ords = frozenset(re.findall(r"제?\s*(\d+)\s*차", t))
-    t = re.sub(r"제?\s*\d+\s*차", "", t)
-    t = re.sub(r"충청북도|충청남도|충북|충남|수혜기업|참여기업|모집|재공고|공고|안내|수정", "", t)
-    return ords, re.sub(r"[^0-9A-Za-z가-힣]", "", t)
-
-
-def _bigrams(s: str) -> set[str]:
-    return {s[i:i + 2] for i in range(len(s) - 1)}
-
-
 def known_titles(dirs: list[str]) -> list[tuple[tuple[frozenset, str], str]]:
     """(제목 키, 출처) — --dedupe 폴더의 announcements.json + seen.json 전체."""
     out = []
@@ -238,20 +223,8 @@ def known_titles(dirs: list[str]) -> list[tuple[tuple[frozenset, str], str]]:
 
 
 def duplicate_of(title: str, known: list[tuple[tuple[frozenset, str], str]]) -> str:
-    ords, n = title_key(title)
-    if len(n) < 8:
-        return ""
-    bn = _bigrams(n)
-    for (o, t), src in known:
-        if o != ords:
-            continue
-        # seen.json 제목은 80자에서 잘려 있으므로 앞부분 포함도 같은 공고로 본다
-        if n == t or (min(len(n), len(t)) >= 20 and (n.startswith(t) or t.startswith(n))):
-            return src
-        bt = _bigrams(t)
-        if 2 * len(bn & bt) / (len(bn) + len(bt)) >= 0.8:   # Dice 계수: 어순이 바뀌어도 잡힌다
-            return src
-    return ""
+    key = title_key(title)
+    return next((src for k, src in known if same_title(key, k)), "")
 
 
 def write_outputs(site, items: list[dict], out: Path, date_from: str, date_to: str) -> None:
