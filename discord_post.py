@@ -37,7 +37,6 @@ import re
 import sys
 import time
 import zipfile
-from difflib import SequenceMatcher
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -117,19 +116,10 @@ MAX_ZIP = 9 * 1024 * 1024   # 공고 첨부 zip 상한 (Discord 무료 서버 �
 DOC_MAIN = re.compile(r"공고|제안\s*요청|과업|규격|사양|지침|안내서|설명서")
 
 
-def short_name(name: str, title: str) -> str:
-    """첨부 이름에서 공고 제목과 겹치는 부분을 떼어 '1. 입찰공고문(수정).hwp'처럼 짧게 (Discord가 긴 파일명을 잘라 보여서)."""
-    stem, ext = os.path.splitext(name)
-    m = SequenceMatcher(None, stem, title, autojunk=False).find_longest_match(0, len(stem), 0, len(title))
-    short = stem[:m.a] + " " + stem[m.a + m.size:] if m.size >= 8 else stem
-    short = re.sub(r"[\s_]+", " ", short).strip(" _-") or stem
-    return short + ext.lower()
-
-
 def bundle_docs(it: dict, out: Path) -> tuple[Path | None, list[str], list[dict]]:
     """적합 공고의 첨부 전부(HWP·PDF·서식)를 zip 하나로 묶는다 — 나라장터 '다운로드' 버튼처럼 한 번에 받기.
     수집기가 판정용으로 고르느라 안 받은 파일(나라장터 HWP본·서식 등)은 여기서 받는다.
-    반환: (zip, zip에 넣은 파일의 짧은 이름, 못 넣은 첨부 — 링크로 안내)"""
+    반환: (zip, zip에 넣은 파일 이름, 못 넣은 첨부 — 링크로 안내)"""
     dest = out / "bundle" / re.sub(r"[^0-9A-Za-z_-]", "_", it["uid"])
     got, missed = [], []
     for att in it.get("attachments", []):
@@ -171,7 +161,7 @@ def bundle_docs(it: dict, out: Path) -> tuple[Path | None, list[str], list[dict]
                 arc = "_" + arc
             used.add(arc)
             z.write(p, arc)
-            names.append(short_name(arc, title))
+            names.append(arc)
             total += size
     if not names:
         zpath.unlink()
@@ -319,13 +309,7 @@ def main() -> int:
             else:   # 카드가 없는 판정(이전 형식)은 제목 링크 + 한 줄
                 txt = f"• [{trunc(it.get('title','?'), 90)}]({it['ntis_url']})\n　{meta_line(it, r)}"
             zpath, names, missed = (None, [], []) if a.no_files else bundle_docs(it, out)
-            if names:   # Discord는 긴 파일명을 잘라 보이므로 zip 안의 파일을 짧은 이름으로 적는다 (같은 문서의 HWP·PDF는 한 줄)
-                kinds: dict[str, list[str]] = {}
-                for n in names:
-                    stem, ext = os.path.splitext(n)
-                    kinds.setdefault(stem, []).append(ext.lstrip(".") or "?")
-                txt += f"\n> 📎 첨부 {len(names)}개 (zip): " + trunc(" · ".join(f"{s} ({'·'.join(e)})" for s, e in kinds.items()), 400)
-            if missed:
+            if missed:   # zip 파일 자체가 첨부 표시라 목록 줄은 따로 쓰지 않고, 못 담은 파일만 링크로
                 txt += "\n> 📎 못 담은 파일은 링크로: " + " · ".join(
                     f"[{trunc(x['name'], 40)}]({x['url']})" if x.get("url") else trunc(x["name"], 40) for x in missed[:5])
             lines.append((txt, [zpath]) if zpath else txt)
