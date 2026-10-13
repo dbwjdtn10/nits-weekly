@@ -4,6 +4,7 @@
   bizinfo       : 기업마당 지원사업 공고 — 충북·충남 지역, 접수중
                   https://www.bizinfo.go.kr/sii/siia/selectSIIA200View.do
   bizinfo_other : 기업마당 — 충북·충남 외 14개 시·도, 접수중. bizinfo_keywords.txt로 공고명 1차 필터
+  bizinfo_central : 기업마당 — 소관이 중앙부처인 공고(KOCCA·NIPA 등 국비 사업), 접수중. bizinfo_keywords.txt로 1차 필터
   mss     : 중소벤처기업부 사업공고  https://www.mss.go.kr/site/smba/ex/bbs/List.do?cbIdx=310
   riia    : 충북 지역혁신클러스터 사업공고  https://cb.riia.or.kr/board/businessAnnouncement
 
@@ -67,8 +68,12 @@ class Bizinfo:
     # schEndAt=N: 접수 마감 제외 / 등록일 내림차순
     PARAMS = {"rows": 15, "schEndAt": "N", "orderGb": 1, "sort": "desc", "condition": "searchPblancNm", "condition1": "AND"}
 
+    def scope(self) -> dict:
+        # 지역 조건은 소관기관이 지자체인 공고만 돌려준다 — 중앙부처 소관은 BizinfoCentral이 받는다
+        return {"schAreaDetailCodes": self.AREAS}
+
     def list_page(self, page: int) -> list[dict]:
-        h = get(self.LIST, params={**self.PARAMS, "schAreaDetailCodes": self.AREAS, "cpage": page}, headers=UA_HEADERS).text
+        h = get(self.LIST, params={**self.PARAMS, **self.scope(), "cpage": page}, headers=UA_HEADERS).text
         rows = []
         for tr in re.findall(r"<tr>(.*?)</tr>", h, re.S):
             m = re.search(r"pblancId=(PBLN_\d+)", tr)
@@ -103,6 +108,16 @@ class BizinfoOther(Bizinfo):
     KEYWORDS = "bizinfo_keywords.txt"   # 대부분 해당 지역 소상공인 전용이라 역량 키워드로 1차 필터
     # 서울 부산 대구 인천 광주·전남 대전 울산 세종 경기 강원 전북 경북 경남 제주
     AREAS = "6110000,6260000,6270000,6280000,6130000,6300000,6310000,5690000,6410000,6420000,6450000,6470000,6480000,6500000"
+
+
+class BizinfoCentral(Bizinfo):
+    """소관이 중앙부처인 공고 (KOCCA·NIPA·중기부·산업부·과기정통부 등의 국비 사업, [충북] 말머리가 붙은 국비 공고 포함).
+    지역 조건(schAreaDetailCodes)을 걸면 지자체 소관만 나오므로 2026-10-13까지 통째로 빠져 있었다 (45일간 키워드 통과 112건 중 7건만 수집)."""
+    key, label = "bizinfo_central", "기업마당(중앙부처)"
+    KEYWORDS = "bizinfo_keywords.txt"
+
+    def scope(self) -> dict:
+        return {"schJrsdCodeTy": "2"}
 
 
 # --------------------------------------------------------------------------- 중소벤처기업부
@@ -182,7 +197,44 @@ class Riia:
         return {"ntis_url": url, "source_url": "", "body": body, "attachments": atts, "contact": ""}
 
 
-SITES = {s.key: s for s in (Bizinfo, BizinfoOther, Mss, Riia)}
+# --------------------------------------------------------------------------- 정보통신산업진흥원
+class Nipa:
+    """NIPA 사업공고. XR 센터 입주·쇼룸·가상융합 허브처럼 기업마당에 재게시되지 않는 XR 공고가 있다 (2026-10-13 점검)."""
+    key, label = "nipa", "정보통신산업진흥원"
+    KEYWORDS = ""   # 주 1~3건이라 전부 판정
+    BASE = "https://www.nipa.kr"
+    LIST = f"{BASE}/home/2-2"
+
+    def list_page(self, page: int) -> list[dict]:
+        h = get(self.LIST, params={"curPage": page}, headers=UA_HEADERS).text
+        rows = []
+        for tr in re.findall(r"<tr>(.*?)</tr>", h, re.S):
+            m = re.search(r'<a href="/home/2-2/(\d+)">(.*?)</a>', tr, re.S)
+            if not m:
+                continue
+            biz = re.search(r'<span class="box bluebox">(.*?)</span>', tr, re.S)
+            per = re.search(r"신청기간\s*:\s*([\d\-: ~]+)", tr)
+            dates = re.findall(r'<span class="bco">\s*(\d{4}-\d{2}-\d{2})\s*</span>', tr)
+            start, end = period(per[1] if per else "")
+            rows.append({"uid": m[1], "title": clean_ws(strip_tags(re.sub(r"<!--.*?-->", "", m[2], flags=re.S))),
+                         "reg_date": dates[-1] if dates else "", "start": start, "end": end,
+                         "status": "종료" if re.search(r"<b>\s*종료\s*</b>", tr) else "",
+                         "period_text": clean_ws(per[1]) if per else "", "dept": "과학기술정보통신부", "agency": "정보통신산업진흥원",
+                         "form": "사업공고", "program": clean_ws(strip_tags(biz[1])) if biz else ""})
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        url = f"{self.LIST}/{row['uid']}"
+        h = get(url, headers=UA_HEADERS).text
+        box = re.search(r">\s*내용\s*</td>\s*<td[^>]*>(.*?)</td>\s*</tr>", h, re.S)
+        body = strip_tags(box[1]) if box else ""
+        atts = [{"name": re.sub(r"\s*\(파일크기.*$", "", clean_ws(strip_tags(re.sub(r"<!--.*?-->", "", n, flags=re.S)))),
+                 "url": abs_url(self.BASE, href)}
+                for href, n in re.findall(r'<a href="(/comm/getFile\?[^"]+)">(.*?)</a>', h, re.S)]
+        return {"ntis_url": url, "source_url": "", "body": body, "attachments": atts, "contact": ""}
+
+
+SITES = {s.key: s for s in (Bizinfo, BizinfoOther, BizinfoCentral, Mss, Riia, Nipa)}
 
 
 # --------------------------------------------------------------------------- 공통

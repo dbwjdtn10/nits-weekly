@@ -120,7 +120,7 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     m = sub.add_parser("mark")
     m.add_argument("--out", required=True)
-    m.add_argument("--source", required=True, choices=["ntis", "g2b", "g2b_pre", "cbist", "riia", "mss", "bizinfo", "bizinfo_other"])
+    m.add_argument("--source", required=True, choices=["ntis", "g2b", "g2b_pre", "cbist", "riia", "mss", "bizinfo", "bizinfo_other", "bizinfo_central", "nipa"])
     m.add_argument("--state", default=str(DEFAULT_PATH))
     p = sub.add_parser("prune")
     p.add_argument("--days", type=int, default=120)

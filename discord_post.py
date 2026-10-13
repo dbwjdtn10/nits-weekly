@@ -108,7 +108,7 @@ def end_date(s: str) -> dt.date | None:
 
 # 검토 카드 항목 (results.json의 card 필드) — 링크를 열지 않고 지원 여부를 정할 수 있게
 CARD_FIELDS = [("make", "📦 만들 것"), ("similar", "🧩 비슷한 실적"), ("period", "🗓 기간"),
-               ("eval", "📝 평가·제출"), ("checks", "⚠ 확인할 점")]
+               ("eval", "📝 평가·제출"), ("history", "🏁 과거 유사 낙찰"), ("checks", "⚠ 확인할 점")]
 
 
 def is_repost(it: dict, r: dict) -> bool:

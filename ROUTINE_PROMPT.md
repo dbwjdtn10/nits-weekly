@@ -20,8 +20,10 @@ python ntis_collect.py --days 14 --out out
 ## 1-b. 나라장터 수집 (환경변수 `G2B_SERVICE_KEY`가 있을 때만)
 ```
 python g2b_collect.py --days 4 --out out/g2b
+python awards_index.py update --days 4
 ```
 - 나라장터 **용역 입찰공고**를 공공데이터포털 API로 받아 `g2b_keywords.txt` 키워드로 1차 필터한 결과입니다. 이미 판정한 공고·취소공고·입찰마감 지난 공고는 자동 제외됩니다. `out/g2b/digest.md`(목록), `out/g2b/brief/<uid>.md`(공고별 필드 전체 + 입찰공고서·제안요청서·과업지시서 최대 4개의 앞부분·참가자격 발췌).
+- `awards_index.py update`는 최근 낙찰 결과를 `state/awards.json`(적합 카드의 과거 유사 낙찰 색인, 2-a절)에 추가합니다. 실패해도 나머지는 진행하세요.
 - 키가 없거나 API가 실패하면 이 단계는 건너뛰고, 최종 응답에 건너뛴 이유를 적으세요.
 
 ## 1-b2. 나라장터 사전규격 수집 (환경변수 `G2B_SERVICE_KEY`가 있을 때만)
@@ -45,11 +47,15 @@ python boards_collect.py --site riia --days 4 --out out/riia
 python boards_collect.py --site mss --days 4 --out out/mss --dedupe out out/cbist out/riia
 python boards_collect.py --site bizinfo --days 4 --out out/bizinfo --dedupe out out/cbist out/riia out/mss
 python boards_collect.py --site bizinfo_other --days 4 --out out/bizinfo_other --dedupe out out/cbist out/riia out/mss out/bizinfo
+python boards_collect.py --site nipa --days 4 --out out/nipa --dedupe out out/cbist out/riia out/mss
+python boards_collect.py --site bizinfo_central --days 4 --out out/bizinfo_central --dedupe out out/cbist out/riia out/mss out/bizinfo out/bizinfo_other out/nipa
 ```
 - riia: https://cb.riia.or.kr/board/businessAnnouncement (충북 지역혁신클러스터 사업공고)
 - mss: https://www.mss.go.kr/site/smba/ex/bbs/List.do?cbIdx=310 (중기부 사업공고)
 - bizinfo: 기업마당 지원사업 중 **충북·충남**, 접수중
 - bizinfo_other: 기업마당 지원사업 중 **그 외 14개 시·도**, 접수중. 대부분 해당 지역 소상공인 전용이라 `bizinfo_keywords.txt`로 공고명 1차 필터를 거친 것만 남습니다.
+- nipa: https://www.nipa.kr/home/2-2 (정보통신산업진흥원 사업공고 — XR 센터 입주·쇼룸처럼 기업마당에 없는 공고가 있음)
+- bizinfo_central: 기업마당 지원사업 중 **소관이 중앙부처**인 공고(KOCCA·NIPA·중기부·산업부 등 국비 사업, `[충북]` 말머리가 붙은 국비 공고 포함), 접수중. 지역 조건 쿼리(bizinfo·bizinfo_other)에는 나오지 않습니다. `bizinfo_keywords.txt`로 1차 필터.
 - 기업마당은 충북과기혁신원·중기부 공고를 재게시하므로 **이 순서대로** 실행해야 `--dedupe`가 앞 소스와 `state/seen.json`의 같은 공고를 걸러냅니다. 한 사이트가 실패해도 나머지는 진행하고 최종 응답에 적으세요.
 
 **수집 0건인 소스는 판정·링크 발송·seen 기록을 생략합니다.** 0건 여부는 3절의 한 줄 요약에만 반영되며(모든 소스가 0건이면 "신규 공고 없음"), 그 외 "0건" 알림은 보내지 마세요. 모든 소스가 **실패**(0건이 아니라 오류)한 경우에만 Discord로 오류 내용을 보내고 종료합니다.
@@ -65,7 +71,7 @@ python boards_collect.py --site bizinfo_other --days 4 --out out/bizinfo_other -
 3. 판정은 `적합` / `조건부` / `부적합` 셋 중 하나입니다. **Discord에는 적합만 링크로 나가고 조건부·부적합은 파일로만 첨부**되므로, 적합은 방향·명확성·자격이 모두 확실한 것만 주세요. 애매하면 `조건부`.
 4. 나라장터 공고(`out/g2b/`)는 용역 입찰이므로 2단계에서 **"입찰공고서 참가자격 발췌"의 입찰참가자격(업종 등록·직접생산확인증명·면허·공장등록·지역)과 헤더의 `구매대상물품` 세부품명번호를 company_profile.md 5절과 하나씩 대조**합니다. "다음 자격을 모두 갖춘 자"처럼 AND로 요구하는 자격 중 하나라도 ❌ 미보유이면 부적합, `[담당자 기재]`로 미확인이면 조건부입니다. 기초금액·마감일은 정보로만 전달하고 판정 사유로 쓰지 않습니다.
 5. **사전규격**(`out/g2b_pre/`)도 나라장터와 같은 2단계로 판정합니다. 차이점: 입찰 마감·평가방식이 아직 없고, 참가자격이 규격서(제안요청서)에 있으면 company_profile.md 5절과 대조하지만 **규격서에 참가자격이 없으면 그 이유만으로 조건부로 내리지 마세요** — 방향·명확성이 확실하면 적합으로 두고 `card.checks`에 "참가자격은 본공고에서 확인"이라고 적습니다 (본공고가 올라오면 수집기가 연결해 다시 판정되므로). 규격서에 있는 AND 자격 중 ❌ 미보유가 있으면 부적합입니다.
-6. 결과를 `out/results.json`(NTIS), `out/g2b/results.json`(나라장터), `out/g2b_pre/results.json`(나라장터 사전규격), `out/cbist/results.json`(충북과기혁신원), `out/riia/results.json`, `out/mss/results.json`, `out/bizinfo/results.json`, `out/bizinfo_other/results.json`에 각각 다음 형식으로 저장하세요 (모든 uid 포함):
+6. 결과를 `out/results.json`(NTIS), `out/g2b/results.json`(나라장터), `out/g2b_pre/results.json`(나라장터 사전규격), `out/cbist/results.json`(충북과기혁신원), `out/riia/results.json`, `out/mss/results.json`, `out/bizinfo/results.json`, `out/bizinfo_other/results.json`, `out/nipa/results.json`, `out/bizinfo_central/results.json`에 각각 다음 형식으로 저장하세요 (모든 uid 포함):
 ```json
 {
   "summary": "이번 수집분 총평 1~2문장 (예: 수집 7건 중 SW/AI 기업이 신청 가능한 공고 1건, 나머지는 대학·수요조사 위주)",
@@ -97,6 +103,7 @@ Discord에는 적합 공고가 링크 대신 **검토 카드**로 나갑니다. 
 }
 ```
 - 적합 항목은 2단계에서 이미 brief를 끝까지 읽었으므로, 카드에 필요한 기간·평가·제출 정보만 `text/<uid>.md`에서 grep으로 찾으세요 (예: `과업기간|계약기간|용역기간|사업기간|수행기간|납품`, `평가|배점|발표|제안서|분량|쪽 이내|현장설명`, `공동수급|하도급|실적`). 나라장터 brief 헤더의 `낙찰방법`·`평가비율`·`공동수급`도 쓰세요.
+- **나라장터·사전규격 적합**은 `history`(과거 유사 낙찰)도 채웁니다. `python awards_index.py lookup --title "<핵심 납품물 키워드>" --agency "<수요기관>"`으로 최근 3년 낙찰 색인(state/awards.json)을 찾고 — 제목 전체보다 납품물 키워드(예: "EV 정비 교육 콘텐츠", "VR 안전 체험")로 1~2번 더 찾아보세요 — 정말 같은 종류의 사업 1~2건만 `"수요기관 연도 「사업명」 — 낙찰사, 금액, 낙찰률 %, 참가 N개사"` 형식으로 적습니다. 같은 기관의 이전 발주가 있으면 우선합니다. 비슷한 게 없으면 `history`를 빼세요(억지로 채우지 말 것).
 - **공고문에 있는 사실만** 짧게 적습니다. 찾지 못한 항목은 `"공고문에서 확인 못 함"`으로 두세요 (추측 금지).
 - `checks`는 판정을 바꾸는 근거가 아니라 **담당자가 준비 여부를 판단할 사실**입니다. 판정 기준(company_profile.md)은 그대로 적용하세요.
 
@@ -107,7 +114,7 @@ Discord에는 적합 공고가 링크 대신 **검토 카드**로 나갑니다. 
 ## 3. 발송
 먼저 **한 줄 요약**을 보냅니다 (매일 1회, 적합 0건이어도 보냄 — routine이 돌았다는 표시). 수집 0건인 소스는 줄에서 자동으로 빠지고, 수집에 실패한 소스(`announcements.json` 없음)는 "⚠ 수집 실패"로 붙습니다:
 ```
-python daily_summary.py NTIS=out 나라장터=out/g2b 나라장터사전규격=out/g2b_pre 충북과기원=out/cbist 지역혁신클러스터=out/riia 중기부=out/mss "기업마당(충북·충남)=out/bizinfo" "기업마당(타지역)=out/bizinfo_other"
+python daily_summary.py NTIS=out 나라장터=out/g2b 나라장터사전규격=out/g2b_pre 충북과기원=out/cbist 지역혁신클러스터=out/riia 중기부=out/mss "기업마당(충북·충남)=out/bizinfo" "기업마당(타지역)=out/bizinfo_other" NIPA=out/nipa "기업마당(중앙부처)=out/bizinfo_central"
 ```
 그다음 적합 링크를 소스별로 보냅니다 (수집 1건 이상인 소스만 실행):
 ```
@@ -119,13 +126,15 @@ python discord_post.py --out out/riia --title "지역혁신클러스터"
 python discord_post.py --out out/mss --title "중기부"
 python discord_post.py --out out/bizinfo --title "기업마당(충북·충남)"
 python discord_post.py --out out/bizinfo_other --title "기업마당(타지역)"
+python discord_post.py --out out/nipa --title "NIPA"
+python discord_post.py --out out/bizinfo_central --title "기업마당(중앙부처)"
 ```
 - **적합이 0건인 소스도 실행하세요** — `discord_post.py`가 `**나라장터** — 적합 0건` 헤더와 조건부·부적합 txt 파일을 보냅니다. 판정이 하나도 없는 소스는 알아서 아무것도 보내지 않습니다. 요약 줄 외에 따로 "0건" 알림을 보내지 마세요.
 - `DISCORD_WEBHOOK_URL` 환경변수를 사용합니다. **적합 공고만** `**나라장터** — 적합 N건` 한 줄 제목 아래 검토 카드(제목 링크 · 마감 · 예산 · 기관 + 2-a절 `card`)로, 이미 보낸 공고의 재공고는 "다시 올라온 공고" 한 줄로, **조건부·부적합은 각각 텍스트 파일(조건부_기간.txt, 부적합_기간.txt)로 첨부**됩니다. 공고 첨부파일은 보내지 않습니다.
 - 전송 로그에 오류가 있으면 `--no-files`로 한 번 더 시도하세요.
 
 ## 4. 판정 기록 저장 (필수, 수집 1건 이상인 소스만)
-다음 실행에서 같은 공고를 다시 판정하지 않도록, 이번에 판정한 공고를 `state/seen.json`에 기록하고 **이 파일만** 커밋·푸시하세요:
+다음 실행에서 같은 공고를 다시 판정하지 않도록, 이번에 판정한 공고를 `state/seen.json`에 기록하고, 낙찰 색인 `state/awards.json`과 함께 **이 두 파일만** 커밋·푸시하세요:
 ```
 python seen_state.py mark --out out --source ntis
 python seen_state.py mark --out out/g2b --source g2b
@@ -135,8 +144,10 @@ python seen_state.py mark --out out/riia --source riia
 python seen_state.py mark --out out/mss --source mss
 python seen_state.py mark --out out/bizinfo --source bizinfo
 python seen_state.py mark --out out/bizinfo_other --source bizinfo_other
+python seen_state.py mark --out out/nipa --source nipa
+python seen_state.py mark --out out/bizinfo_central --source bizinfo_central
 python seen_state.py prune --days 120
-git add state/seen.json
+git add state/seen.json state/awards.json
 git diff --cached --quiet || git -c user.name="ntis-routine" -c user.email="routine@x2r.kr" commit -m "state: $(date +%F) 판정 기록"
 git pull --rebase origin main && git push origin main
 ```
