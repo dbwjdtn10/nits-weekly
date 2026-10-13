@@ -19,7 +19,7 @@
 | `g2b_collect.py` | 나라장터 입찰공고(용역) — 공공데이터포털 Open API로 지난주 게시분 수집 후 `g2b_keywords.txt`로 1차 필터, 입찰공고서·제안요청서·과업지시서 최대 4개(서약서·계약조건 등 공통서식 제외)를 받아 참가자격 발췌. `G2B_SERVICE_KEY` 필요 |
 | `g2b_keywords.txt` | 나라장터 1차 필터 — 공공조달분류(`[class_exclude]`/`[class_include]`)로 업종째 거르고, 공고명 키워드(`[strong]`은 제외어 무시 / `[include]` / `[weak]` / `[exclude]`)로 판단 |
 | `g2b_prespec_collect.py` | 나라장터 **용역 사전규격**(본공고 전 제안요청서·과업지시서 초안) — 공공데이터포털 "조달청_나라장터 사전규격정보서비스"(같은 키, 활용신청 필요). 공고명 키워드 필터 후 규격서 첨부를 받아 과업 개요·참가자격 발췌. 사전규격 → 본공고 중앙값 8일 앞섬. 본공고가 올라오면 `g2b_collect.py`가 `bfSpecRgstNo`로 연결해 "본공고 올라옴"으로 표시 |
-| `awards_index.py` / `state/awards.json` | 나라장터 **용역 낙찰 이력 색인** (조달청_나라장터 낙찰정보서비스, 같은 키). API가 공고명 검색·한 달 초과 조회를 지원하지 않아 g2b_keywords 필터를 통과한 낙찰만 3년치 저장(`backfill` 최초 1회, `update` 매일). `lookup --title --agency`로 적합 카드의 "과거 유사 낙찰"(낙찰사·낙찰률·참가 업체 수) 작성 |
+| `awards_index.py` / `state/awards.json` | 나라장터 **용역 낙찰 이력 색인** (조달청_나라장터 낙찰정보서비스, 같은 키). API가 공고명 검색·한 달 초과 조회를 지원하지 않아 g2b_keywords 필터를 통과한 낙찰만 3년치 저장(`backfill` 최초 1회, `update` 매일). `lookup --title --agency`로 비슷한 사업의 낙찰사·낙찰률·참가 업체 수 조회 (Discord 카드에는 띄우지 않음) |
 | `cbist_collect.py` | 충북과학기술혁신원 사업공고(cbist.or.kr mncd=1131) — 지난주 등록분 본문·첨부 수집. NTIS 수집기의 추출 로직 재사용 |
 | `boards_collect.py` | 게시판형 공고 수집기 `--site riia\|mss\|bizinfo\|bizinfo_other\|bizinfo_central\|nipa` — 충북 지역혁신클러스터(cb.riia.or.kr), 중기부 사업공고(mss.go.kr cbIdx=310), 기업마당 지원사업(충북·충남 / 그 외 14개 시·도, 접수중). 등록분 본문·첨부 수집, `--dedupe`로 다른 소스·seen.json과 제목이 같은 재게시 공고 제외 |
 | `bizinfo_keywords.txt` | 기업마당 타지역(`bizinfo_other`) 공고명 1차 필터 포함/제외 키워드 |
