@@ -90,7 +90,7 @@ python discord_post.py --out out/mss --title "중기부"
 python discord_post.py --out out/bizinfo --title "기업마당(충북·충남)"
 python discord_post.py --out out/bizinfo_other --title "기업마당(타지역)"
 ```
-- **적합이 0건인 소스는 `discord_post.py`가 알아서 아무것도 보내지 않습니다** (조건부·부적합 파일도 생략). 요약 줄 외에 따로 "0건" 알림을 보내지 마세요.
+- **적합이 0건인 소스도 실행하세요** — `discord_post.py`가 `**나라장터** — 적합 0건` 헤더와 조건부·부적합 txt 파일을 보냅니다. 판정이 하나도 없는 소스는 알아서 아무것도 보내지 않습니다. 요약 줄 외에 따로 "0건" 알림을 보내지 마세요.
 - `DISCORD_WEBHOOK_URL` 환경변수를 사용합니다. **적합 공고만** `**나라장터** — 적합 N건` 한 줄 제목 아래 링크 목록(제목 링크 · 마감 · 예산 · 기관)으로, **조건부·부적합은 각각 텍스트 파일(조건부_기간.txt, 부적합_기간.txt)로 첨부**됩니다. 공고 첨부파일은 보내지 않습니다.
 - 전송 로그에 오류가 있으면 `--no-files`로 한 번 더 시도하세요.
 
