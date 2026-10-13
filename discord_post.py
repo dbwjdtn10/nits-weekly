@@ -12,8 +12,7 @@
            "score": 0-100, "reason": "판정 사유 1~3문장",
            "conditions": ["핵심 자격/조건 요약", ...],
            "action": "다음 액션 제안(선택)",
-           "card": {"make": "만들 것", "similar": "비슷한 실적", "period": "기간",
-                    "eval": "평가·제출", "checks": ["확인할 점", ...]},   # 적합만 — 링크 대신 검토 카드로 표시
+           "card": {"make": "만들 것"},   # 적합만 — 제목·마감·예산·기관 줄 아래 표시
            "changes": "재공고에서 바뀐 점(선택)"}
         ]
       }
@@ -109,9 +108,9 @@ def end_date(s: str) -> dt.date | None:
         return None
 
 
-# 검토 카드 항목 (results.json의 card 필드) — 링크를 열지 않고 지원 여부를 정할 수 있게
-CARD_FIELDS = [("make", "📦 만들 것"), ("similar", "🧩 비슷한 실적"), ("period", "🗓 기간"),
-               ("eval", "📝 평가·제출"), ("checks", "⚠ 확인할 점")]
+# 검토 카드 항목 (results.json의 card 필드) — 마감·예산·기관 줄과 '만들 것'만 보면 자세히 볼지 정할 수 있어
+# 나머지 항목(비슷한 실적·평가·확인할 점·판정 근거)은 읽는 데 방해만 된다는 피드백으로 뺐다
+CARD_FIELDS = [("make", "📦 만들 것")]
 
 
 MAX_ZIP = 9 * 1024 * 1024   # 공고 첨부 zip 상한 (Discord 무료 서버 업로드 한도 10MB)
@@ -193,7 +192,7 @@ def short_date(s: str) -> str:
 
 
 def card_text(it: dict, r: dict, meta: str) -> str:
-    """적합 공고 한 건 = 메시지 블록 하나: 제목 링크, 마감·금액·기관, 카드 항목, 판정 근거."""
+    """적합 공고 한 건 = 메시지 블록 하나: 제목 링크, 마감·금액·기관, 만들 것."""
     out = [f"🟢 **[{trunc(it.get('title', '?'), 90)}]({it['ntis_url']})**", meta]
     card = r.get("card") or {}
     for key, label in CARD_FIELDS:
@@ -202,8 +201,6 @@ def card_text(it: dict, r: dict, meta: str) -> str:
             v = " · ".join(x for x in v if x)
         if v:
             out.append(f"> {label}: {trunc(v, 220)}")
-    if r.get("reason"):
-        out.append(f"> 💬 판정 근거: {trunc(r['reason'], 260)}")
     return "\n".join(out)
 
 
