@@ -46,7 +46,8 @@ OPS = {
     "cnstwk": "getBidPblancListInfoCnstwkPPSSrch", # 공사
 }
 TYPE_LABEL = {"servc": "용역", "thng": "물품", "cnstwk": "공사"}
-G2B_DETAIL = "https://www.g2b.go.kr:8101/ep/invitation/publish/bidInfoDtl.do?bidno={no}&bidseq={ord}"
+# 나라장터 메뉴 PNPE027_01 "입찰공고상세조회(통합)" — 로그인 없이 열린다 (2026-10-20 확인)
+G2B_DETAIL = "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo={no}&bidPbancOrd={ord}"
 NUM_ROWS = 999
 session = requests.Session()
 session.headers.update({"User-Agent": "X2R-G2B-collector/1.0"})
@@ -179,7 +180,7 @@ def normalize(item: dict, typ: str) -> dict:
         u = g(item, f"ntceSpecDocUrl{i}")
         if u:
             atts.append({"name": g(item, f"ntceSpecFileNm{i}") or f"공고문{i}", "url": u})
-    detail = g(item, "bidNtceDtlUrl") or G2B_DETAIL.format(no=no, ord=ord_)
+    detail = G2B_DETAIL.format(no=no, ord=ord_.zfill(3))   # API의 bidNtceDtlUrl 대신 항상 입찰공고상세 화면으로
     d = {
         "uid": f"{no}-{ord_}",
         "source": "g2b",

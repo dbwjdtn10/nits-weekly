@@ -32,6 +32,8 @@ from g2b_collect import (
 from seen_state import seen_uids
 
 URL = "http://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServc"   # 용역
+# API에 상세 링크 필드가 없어 직접 만든다 — 나라장터 메뉴 PRVA004_02 "사전규격상세조회" (2026-10-20 로그인 없이 열리는 것 확인)
+G2B_PRE_DETAIL = "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo={no}"
 
 
 def fetch(key: str, date_from: str, date_to: str) -> list[dict]:
@@ -80,8 +82,7 @@ def normalize(p: dict) -> dict:
         "sw_biz": g(p, "swBizObjYn"),
         "contact": " ".join(x for x in [g(p, "ofclNm"), g(p, "ofclTelNo")] if x),
         "bid_numbers": g(p, "bidNtceNoList"),
-        # 사전규격 상세 페이지는 공개 링크 형식이 없어, 확실히 열리는 첫 규격서 파일 링크를 쓴다 (discord_post.py 호환 필드명)
-        "ntis_url": next((u for u in urls if u), ""),
+        "ntis_url": G2B_PRE_DETAIL.format(no=no),   # 사전규격상세조회 화면 (discord_post.py 호환 필드명)
         "source_url": "",
         "attachments": [{"name": f"규격서{i}", "url": u} for i, u in enumerate(urls, 1) if u],
         "body": "",

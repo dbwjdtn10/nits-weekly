@@ -196,7 +196,7 @@ def card_text(it: dict, r: dict, meta: str) -> str:
 
 def build_embed(it: dict, res: dict) -> dict:
     v = res.get("verdict", "부적합")
-    g2b = it.get("source") == "g2b"
+    g2b = it.get("source") in ("g2b", "g2b_pre")
     fields = [
         {"name": "수요기관 / 공고기관" if g2b else "부처 / 공고기관", "value": trunc(f"{it.get('dept','')} / {it.get('agency','')}", 200) or "-", "inline": True},
         {"name": "입찰마감" if g2b else "접수 ~ 마감", "value": (f"{it.get('end','')}  **{it.get('dday','')}**" if g2b else f"{it.get('start','')} ~ {it.get('end','')}  **{it.get('dday','')}**"), "inline": True},
