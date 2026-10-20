@@ -22,16 +22,15 @@
   DISCORD_WEBHOOK_URL   (필수)
 사용:
   python discord_post.py --out out                 # 적합만 카드 + 공고 첨부 전부(HWP·PDF·서식)를 zip 하나로
-                                                   # 조건부·부적합은 판정별 HTML 파일로 첨부 (제목 클릭 = 공고 상세)
+                                                   # 조건부·부적합은 판정별 txt 파일로 첨부
   python discord_post.py --out out --dry-run       # 콘솔 출력만
-  ※ 적합이 0건이어도 조건부·부적합이 있으면 헤더 + HTML 파일은 발송. 판정 0건이면 아무것도 보내지 않음
+  ※ 적합이 0건이어도 조건부·부적합이 있으면 헤더 + txt 파일은 발송. 판정 0건이면 아무것도 보내지 않음
   python discord_post.py --out out --format embed  # 상세 embed + 첨부파일 형식
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
-import html
 import json
 import os
 import re
@@ -203,42 +202,17 @@ def period_line(it: dict) -> str:
     return f"공고 {it.get('announce_date') or '-'} · {span}"
 
 
-def verdict_html(verdict: str, rs: list[dict], items: dict, title: str, date_from: str, date_to: str) -> str:
-    """조건부·부적합 목록 파일 — 제목을 누르면 공고 상세로 간다."""
-    e = html.escape
-    rows = []
+def verdict_txt(verdict: str, rs: list[dict], items: dict, title: str, date_from: str, date_to: str) -> str:
+    """조건부·부적합 목록 파일 — 수집 공고일 범위 + 공고마다 공고일·접수 기간 한 줄."""
+    rl = [f"{verdict} {len(rs)}건 — {title}", f"수집 공고일: {date_from} ~ {date_to}", ""]
     for n, r in enumerate(rs, 1):
         it = items.get(str(r["uid"]), {})
-        url = it.get("ntis_url", "")
-        name = e(it.get("title", "?"))
-        head = f'<a href="{e(url)}" target="_blank" rel="noopener">{name}</a>' if url else name
-        info = [period_line(it), it.get("agency") or it.get("dept") or ""]
-        lines = [f'<p class="meta">{e(" · ".join(x for x in info if x))}</p>',
-                 f"<p><b>사유</b> {e(r.get('reason', ''))}</p>"]
+        rl += [f"{n}. {it.get('title', '?')}", f"   {period_line(it)}", f"   사유: {r.get('reason', '')}"]
         if verdict == "조건부":
-            lines += [f"<p><b>확인할 것</b> {e('; '.join(r.get('conditions') or []))}</p>",
-                      f"<p><b>제안 액션</b> {e(r.get('action', ''))}</p>",
-                      f"<p><b>금액</b> {e(r.get('budget') or it.get('budget') or '-')}</p>"]
-        rows.append(f'<li><div class="t">{head}</div>' + "".join(lines) + "</li>")
-    return f"""<!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{e(verdict)} {len(rs)}건</title>
-<style>
-:root {{ color-scheme: light dark; --bg:#fff; --fg:#1f2328; --muted:#656d76; --line:#d0d7de; --link:#0969da; }}
-@media (prefers-color-scheme: dark) {{ :root {{ --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --line:#30363d; --link:#4493f8; }} }}
-body {{ margin:0 auto; max-width:860px; padding:20px 16px; background:var(--bg); color:var(--fg);
-       font:15px/1.6 -apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif; }}
-h1 {{ font-size:18px; margin:0 0 4px; }} .range {{ color:var(--muted); margin:0 0 16px; }}
-ol {{ padding-left:24px; }} li {{ padding:10px 0; border-bottom:1px solid var(--line); }}
-.t {{ font-weight:600; }} a {{ color:var(--link); }} p {{ margin:2px 0; }} .meta {{ color:var(--muted); font-size:13px; }}
-</style></head><body>
-<h1>{e(verdict)} {len(rs)}건 — {e(title)}</h1>
-<p class="range">수집 공고일 {e(date_from)} ~ {e(date_to)} · 제목을 누르면 공고 상세로 이동</p>
-<ol>
-{chr(10).join(rows)}
-</ol>
-</body></html>
-"""
+            rl += [f"   확인할 것: {'; '.join(r.get('conditions') or [])}", f"   제안 액션: {r.get('action', '')}",
+                   f"   금액: {r.get('budget') or it.get('budget') or '-'}"]
+        rl += [f"   링크: {it.get('ntis_url', '')}", ""]
+    return "\n".join(rl)
 
 
 def build_embed(it: dict, res: dict) -> dict:
@@ -279,7 +253,7 @@ def main() -> int:
     ap.add_argument("--out", default="out")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-files", action="store_true")
-    ap.add_argument("--send", default="적합", help="링크로 보낼 판정 (콤마 구분). 기본: 적합 — 조건부·부적합은 판정별 HTML 파일로 첨부")
+    ap.add_argument("--send", default="적합", help="링크로 보낼 판정 (콤마 구분). 기본: 적합 — 조건부·부적합은 판정별 txt 파일로 첨부")
     ap.add_argument("--format", default="links", choices=["links", "embed"], help="links: 공고당 한 줄 링크(기본) / embed: 상세 embed + 첨부")
     ap.add_argument("--no-rejected", action="store_true", help="부적합 목록 파일 첨부 생략")
     ap.add_argument("--send-empty", action="store_true", help="판정 0건이어도 헤더 발송. 기본은 발송 생략")
@@ -314,7 +288,7 @@ def main() -> int:
     unjudged = [u for u in items if u not in results]
 
     # 링크로도 파일로도 보낼 게 없으면 아무것도 보내지 않는다 (일일 실행이라 빈 리포트가 채널을 덮지 않도록).
-    # 적합이 0건이어도 조건부·부적합이 있으면 헤더(적합 0건) + 판정별 HTML 파일은 보낸다.
+    # 적합이 0건이어도 조건부·부적합이 있으면 헤더(적합 0건) + 판정별 txt 파일은 보낸다.
     attachable = [r for r in judged if r.get("verdict") not in send_set
                   and not (r.get("verdict") == "부적합" and a.no_rejected)]
     if not picked and not reposts and not attachable and not a.send_empty:
@@ -372,15 +346,15 @@ def main() -> int:
                 changes = r.get("changes") or ""
                 lines.append(f"• [{trunc(it.get('title','?'), 80)}]({it['ntis_url']}) — {short_date(it['repost_of'].get('judged_at', ''))} 발송분\n"
                              f"　{meta_line(it, r)}" + (f"\n　변경: {trunc(changes, 160)}" if changes else ""))
-        # 링크로 보내지 않은 판정(조건부·부적합)은 메시지에 줄을 차지하지 않도록 판정별 HTML 파일로 만들어
-        # 마지막 메시지에 첨부 — txt 미리보기는 주소를 눌러도 열리지 않아, 브라우저로 열면 제목을 눌러 바로 공고로 가게 한다
+        # 링크로 보내지 않은 판정(조건부·부적합)은 메시지에 줄을 차지하지 않도록 판정별 텍스트 파일로 만들어
+        # 마지막 메시지에 첨부 (클릭하면 Discord 안에서 열림)
         files: list[Path] = []
         for verdict in ("조건부", "부적합"):
             rs = [r for r in judged if r.get("verdict") == verdict and verdict not in send_set]
             if not rs or (verdict == "부적합" and a.no_rejected):
                 continue
-            f = out / f"{verdict}_{date_from}_{date_to}.html"
-            f.write_text(verdict_html(verdict, rs, items, a.title, date_from, date_to), "utf-8")
+            f = out / f"{verdict}_{date_from}_{date_to}.txt"
+            f.write_text(verdict_txt(verdict, rs, items, a.title, date_from, date_to), "utf-8")
             files.append(f)
         # 2000자 단위로 나눠 보내되, 공고 첨부가 있는 카드는 그 카드에서 메시지를 끊어 파일이 카드 바로 아래 붙게 한다
         chunks: list[tuple[str, list[Path]]] = []
@@ -396,12 +370,12 @@ def main() -> int:
                 buf = ""
         if buf or not chunks:
             chunks.append((buf, []))
-        if files:   # 조건부·부적합 HTML은 마지막 메시지에
+        if files:   # 조건부·부적합 txt는 마지막 메시지에
             c, docs = chunks[-1]
             chunks[-1] = (c, docs + files)
         for c, fs in chunks:
             send(a.webhook, {"content": c, "allowed_mentions": {"parse": []}}, fs or None, dry=a.dry_run)
-        log(f"완료: 적합 {len(picked)}건 + 재공고 {len(reposts)}건 발송 (HTML 첨부: 조건부 {n_cond}, 부적합 {len(rejected)})")
+        log(f"완료: 적합 {len(picked)}건 + 재공고 {len(reposts)}건 발송 (첨부파일: 조건부 {n_cond}, 부적합 {len(rejected)})")
         return 0
 
     send(a.webhook, {"content": head, "allowed_mentions": {"parse": []}}, dry=a.dry_run)
