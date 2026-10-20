@@ -396,7 +396,7 @@ def main() -> int:
                 buf = ""
         if buf or not chunks:
             chunks.append((buf, []))
-        if files:   # 조건부·부적합 txt는 마지막 메시지에
+        if files:   # 조건부·부적합 HTML은 마지막 메시지에
             c, docs = chunks[-1]
             chunks[-1] = (c, docs + files)
         for c, fs in chunks:
