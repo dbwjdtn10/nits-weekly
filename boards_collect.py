@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 게시판형 지원사업 공고 수집기 (사이트별 어댑터).
-  bizinfo       : 기업마당 지원사업 공고 — 충북·충남 지역, 접수중
-                  https://www.bizinfo.go.kr/sii/siia/selectSIIA200View.do
+  bizinfo       : 기업마당 지원사업 공고 — 소관이 충북·충남인 공고, 접수중
+                  공공데이터포털 API https://www.data.go.kr/data/15157820/openapi.do (G2B_SERVICE_KEY, 활용신청 필요)
   bizinfo_other : 기업마당 — 충북·충남 외 14개 시·도, 접수중. bizinfo_keywords.txt로 공고명 1차 필터
-  bizinfo_central : 기업마당 — 소관이 중앙부처인 공고(KOCCA·NIPA 등 국비 사업), 접수중. bizinfo_keywords.txt로 1차 필터
-  mss     : 중소벤처기업부 사업공고  https://www.mss.go.kr/site/smba/ex/bbs/List.do?cbIdx=310
+  bizinfo_central : 기업마당 — 소관이 중앙부처인 공고(KOCCA·NIPA 등 국비 사업, 중기부 제외), 접수중. bizinfo_keywords.txt로 1차 필터
+  mss     : 기업마당 — 소관이 중소벤처기업부인 공고 (같은 API)
   riia    : 충북 지역혁신클러스터 사업공고  https://cb.riia.or.kr/board/businessAnnouncement
 
 지정 기간(기본: 지난주 월~일)에 등록된 공고의 상세 본문과 첨부를 내려받아
@@ -24,9 +24,11 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 
 from cbist_collect import download_attachment
@@ -57,106 +59,89 @@ def abs_url(base: str, href: str) -> str:
     return href if href.startswith("http") else base + "/" + href.lstrip("/")
 
 
-# --------------------------------------------------------------------------- 기업마당
+# --------------------------------------------------------------------------- 기업마당 (공공데이터포털 API)
 class Bizinfo:
+    """공공데이터포털 "중소벤처기업부_중소기업 지원사업 공고 조회 서비스"(G2B_SERVICE_KEY와 같은 키, 활용신청 필요)로
+    기업마당 접수중 공고를 등록일 내림차순으로 받는다. www.bizinfo.go.kr·www.mss.go.kr은 2026-10-20부터 클라우드 routine에서
+    연결이 끊겨(Connection reset) 목록·본문을 API로 바꿨다. 첨부는 여전히 www.bizinfo.go.kr에 있어 클라우드에서는 못 받을 수 있다.
+    소관기관명(jrsdInsttNm)이 지자체 소관이면 광역 시·도 이름, 국비 사업이면 부처 이름이라 이것으로 소스를 나눈다."""
     key, label = "bizinfo", "기업마당(충북·충남)"
     KEYWORDS = ""   # 키워드 1차 필터 파일 (없으면 전부 판정)
-    BASE = "https://www.bizinfo.go.kr"
-    LIST = f"{BASE}/sii/siia/selectSIIA200View.do"
-    VIEW = f"{BASE}/sii/siia/selectSIIA200Detail.do"
-    AREAS = "6430000,6440000"   # 충북, 충남
-    # schEndAt=N: 접수 마감 제외 / 등록일 내림차순
-    PARAMS = {"rows": 15, "schEndAt": "N", "orderGb": 1, "sort": "desc", "condition": "searchPblancNm", "condition1": "AND"}
+    API = "https://apis.data.go.kr/1421000/bizinfo/pblancBsnsService"
+    ROWS = 300
+    AREAS = {"충청북도", "충청남도"}
+    LOCAL = re.compile(r"(특별시|광역시|특별자치시|도)$")   # 광역 시·도 (전남광주통합특별시·강원특별자치도 포함)
 
-    def scope(self) -> dict:
-        # 지역 조건은 소관기관이 지자체인 공고만 돌려준다 — 중앙부처 소관은 BizinfoCentral이 받는다
-        return {"schAreaDetailCodes": self.AREAS}
+    def __init__(self) -> None:
+        key = os.environ.get("G2B_SERVICE_KEY", "")
+        # "Encoding" 키(%2B, %3D 포함)를 넣어도 requests가 다시 인코딩하지 않도록 디코딩해 둔다
+        self.service_key = urllib.parse.unquote(key) if "%" in key else key
+        self.items: dict[str, dict] = {}
+
+    def in_scope(self, row: dict) -> bool:
+        return row["dept"] in self.AREAS
 
     def list_page(self, page: int) -> list[dict]:
-        h = get(self.LIST, params={**self.PARAMS, **self.scope(), "cpage": page}, headers=UA_HEADERS).text
+        if not self.service_key:
+            raise RuntimeError("G2B_SERVICE_KEY 환경변수(공공데이터포털 인증키)가 필요합니다.")
+        body = get(self.API, params={"serviceKey": self.service_key, "dataType": "json", "pageNo": page,
+                                     "numOfRows": self.ROWS}).json()["response"]["body"]
         rows = []
-        for tr in re.findall(r"<tr>(.*?)</tr>", h, re.S):
-            m = re.search(r"pblancId=(PBLN_\d+)", tr)
-            if not m:
-                continue
-            cells = [clean_ws(strip_tags(c)) for c in re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)]
-            # 번호 | 지원분야 | 제목 | 신청기간 | 소관부처 | 사업수행기관 | 등록일 | 조회
-            if len(cells) < 7:
-                continue
-            start, end = period(cells[3])
-            rows.append({"uid": m[1], "title": cells[2], "reg_date": dash_date(cells[6]), "start": start, "end": end,
-                         "status": "", "period_text": cells[3], "dept": cells[4], "agency": cells[5], "form": cells[1]})
+        for it in (body.get("items") or {}).get("item") or []:
+            self.items[it["pblancId"]] = it
+            start, end = period(it.get("reqstBeginEndDe", ""))
+            rows.append({"uid": it["pblancId"], "title": clean_ws(it["pblancNm"]), "reg_date": dash_date(it["creatPnttm"]),
+                         "start": start, "end": end, "status": "", "period_text": it.get("reqstBeginEndDe", ""),
+                         "dept": it.get("jrsdInsttNm", ""), "agency": it.get("excInsttNm", ""),
+                         "form": it.get("pldirSportRealmLclasCodeNm", "")})
         return rows
 
     def detail(self, row: dict) -> dict:
-        url = f"{self.VIEW}?pblancId={row['uid']}"
-        h = get(url, headers=UA_HEADERS).text
-        fields = {clean_ws(strip_tags(k)): strip_tags(v) for k, v in re.findall(
-            r'<span class="s_title">([^<]*)</span>\s*<div class="txt"[^>]*>(.*?)</div>\s*</li>', h, re.S)}
-        body = "\n\n".join(f"[{k}]\n{v}" for k, v in fields.items() if v)
-        site = re.search(r'<span class="s_title">사업신청 사이트</span>.*?href="(http[^"]+)"', h, re.S)
-        atts = []
-        for name, href in re.findall(r'<div class="file_name">(.*?)</div>.*?href="(/cmm/fms/fileDown\.do\?[^"]+)"', h, re.S):
-            atts.append({"name": clean_ws(strip_tags(name)), "url": abs_url(self.BASE, href)})
-        return {"ntis_url": url, "source_url": html.unescape(site[1]) if site else "", "body": body,
-                "attachments": atts, "contact": clean_ws(fields.get("문의처", ""))[:200]}
+        it = self.items[row["uid"]]
+        fields = [("사업개요", strip_tags(it.get("bsnsSumryCn") or "")), ("지원대상", it.get("trgetNm")),
+                  ("사업신청 방법", it.get("reqstMthPapersCn")), ("문의처", it.get("refrncNm"))]
+        body = "\n\n".join(f"[{k}]\n{v}" for k, v in fields if v)
+        atts, stems = [], set()
+        # 첨부(@로 이어 붙임) 다음에 본문출력파일(공고문 PDF) — 같은 공고문이 hwpx·pdf 두 벌이면 하나만 받는다
+        files = list(zip((it.get("fileNm") or "").split("@"), (it.get("flpthNm") or "").split("@")))
+        files.append((it.get("printFileNm") or "", it.get("printFlpthNm") or ""))
+        for name, url in files:
+            name, stem = clean_ws(name), re.sub(r"\.[A-Za-z0-9]+$", "", clean_ws(name))
+            if not name or not url.startswith("http") or stem in stems:
+                continue
+            stems.add(stem)
+            atts.append({"name": name, "url": url})
+        return {"ntis_url": it.get("pblancUrl", ""), "source_url": it.get("rceptEngnHmpgUrl", ""), "body": body,
+                "attachments": atts, "contact": clean_ws(it.get("refrncNm", ""))[:200]}
 
 
 class BizinfoOther(Bizinfo):
     """충북·충남을 뺀 나머지 14개 시·도. 주당 70~150건으로 많다."""
     key, label = "bizinfo_other", "기업마당(타지역)"
     KEYWORDS = "bizinfo_keywords.txt"   # 대부분 해당 지역 소상공인 전용이라 역량 키워드로 1차 필터
-    # 서울 부산 대구 인천 광주·전남 대전 울산 세종 경기 강원 전북 경북 경남 제주
-    AREAS = "6110000,6260000,6270000,6280000,6130000,6300000,6310000,5690000,6410000,6420000,6450000,6470000,6480000,6500000"
+
+    def in_scope(self, row: dict) -> bool:
+        return bool(self.LOCAL.search(row["dept"])) and row["dept"] not in self.AREAS
 
 
 class BizinfoCentral(Bizinfo):
-    """소관이 중앙부처인 공고 (KOCCA·NIPA·중기부·산업부·과기정통부 등의 국비 사업, [충북] 말머리가 붙은 국비 공고 포함).
-    지역 조건(schAreaDetailCodes)을 걸면 지자체 소관만 나오므로 2026-10-13까지 통째로 빠져 있었다 (45일간 키워드 통과 112건 중 7건만 수집)."""
+    """소관이 중앙부처인 공고 (KOCCA·NIPA·산업부·과기정통부 등의 국비 사업, [충북] 말머리가 붙은 국비 공고 포함).
+    중기부 소관은 Mss가 받고 여기서는 --dedupe out/mss로 빠진다."""
     key, label = "bizinfo_central", "기업마당(중앙부처)"
     KEYWORDS = "bizinfo_keywords.txt"
 
-    def scope(self) -> dict:
-        return {"schJrsdCodeTy": "2"}
+    def in_scope(self, row: dict) -> bool:
+        return not self.LOCAL.search(row["dept"])
 
 
 # --------------------------------------------------------------------------- 중소벤처기업부
-class Mss:
+class Mss(Bizinfo):
+    """기업마당에서 소관이 중소벤처기업부인 공고 (창업진흥원·소진공·중진공·지방중기청·TP 수행분 포함).
+    2026-10-19까지는 www.mss.go.kr 사업공고 게시판(cbIdx=310, uid는 게시글 번호)에서 받았다."""
     key, label = "mss", "중소벤처기업부"
-    KEYWORDS = ""
-    BASE = "https://www.mss.go.kr"
-    LIST = f"{BASE}/site/smba/ex/bbs/List.do"
-    VIEW = f"{BASE}/site/smba/ex/bbs/View.do"
 
-    def list_page(self, page: int) -> list[dict]:
-        h = get(self.LIST, params={"cbIdx": 310, "pageIndex": page}, headers=UA_HEADERS).text
-        rows = []
-        for m in re.finditer(r"<tr[^>]*onclick=\"doBbsFView\('310','(\d+)'[^>]*title=\"([^\"]*)\"(.*?)</tr>", h, re.S):
-            tr = m[3]
-            info = dict((clean_ws(k), clean_ws(strip_tags(v))) for k, v in re.findall(r"<dt>(.*?)</dt>\s*<dd>(.*?)</dd>", tr, re.S))
-            reg = re.search(r"<td>\s*(\d{4}\.\d{2}\.\d{2})\s*</td>", tr)
-            start, end = period(info.get("신청기간", ""))
-            rows.append({"uid": m[1], "title": clean_ws(m[2]), "reg_date": dash_date(reg[1]) if reg else "",
-                         "start": start, "end": end, "status": "", "period_text": info.get("신청기간", ""),
-                         "dept": "중소벤처기업부", "agency": "중소벤처기업부 " + info.get("담당부서", ""),
-                         "form": "사업공고", "program": info.get("공고번호", "")})
-        return rows
-
-    def detail(self, row: dict) -> dict:
-        url = f"{self.VIEW}?cbIdx=310&bcIdx={row['uid']}&parentSeq={row['uid']}"
-        h = get(url, headers=UA_HEADERS).text
-        ta = re.search(r'<textarea id="editContents"[^>]*>(.*?)</textarea>', h, re.S)
-        body = strip_tags(html.unescape(ta[1])) if ta else ""
-        atts, stems = [], set()
-        fl = re.search(r'class="file_list">(.*?)</td>', h, re.S)
-        for name, href in re.findall(r'<span class="name">(.*?)<em>.*?href="(/common/board/Download\.do\?[^"]+)"', fl[1] if fl else "", re.S):
-            nm = clean_ws(strip_tags(name))
-            stem = re.sub(r"\.[A-Za-z0-9]+$", "", nm)
-            if stem in stems:   # 같은 공고문을 hwpx·pdf 두 벌로 올리는 경우가 많아 하나만 받는다
-                continue
-            stems.add(stem)
-            atts.append({"name": nm, "url": abs_url(self.BASE, href)})
-        return {"ntis_url": url, "source_url": "", "body": body, "attachments": atts, "contact": ""}
+    def in_scope(self, row: dict) -> bool:
+        return row["dept"] == "중소벤처기업부"
 
 
 # --------------------------------------------------------------------------- 충북 지역혁신클러스터
@@ -256,7 +241,8 @@ def fetch_list(site, date_from: str, date_to: str, max_pages: int = 30) -> list[
         if r["uid"] in seen:
             continue
         seen.add(r["uid"])
-        if r["reg_date"] and date_from <= r["reg_date"] <= date_to:
+        # 기업마당 계열은 API 한 목록을 소관기관으로 나눠 쓴다
+        if r["reg_date"] and date_from <= r["reg_date"] <= date_to and getattr(site, "in_scope", lambda _: True)(r):
             uniq.append(r)
     return uniq
 
@@ -379,6 +365,7 @@ def main() -> int:
                         extract_attachment(att, p)
                         log(f"  + {p.name} ({att['size'] // 1024}KB, {attachment_log(att)})")
                 except Exception as e:  # noqa: BLE001
+                    att["skipped"] = "download_failed"
                     log(f"  ! 첨부 실패 {att['name']}: {e}")
                 time.sleep(0.3)
         items.append(d)

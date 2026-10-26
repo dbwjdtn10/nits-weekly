@@ -51,12 +51,14 @@ python boards_collect.py --site bizinfo_other --days 4 --out out/bizinfo_other -
 python boards_collect.py --site nipa --days 4 --out out/nipa --dedupe out out/cbist out/riia out/mss
 python boards_collect.py --site bizinfo_central --days 4 --out out/bizinfo_central --dedupe out out/cbist out/riia out/mss out/bizinfo out/bizinfo_other out/nipa
 ```
+- **1회성: 오늘(KST)이 2026-10-27이면** mss·bizinfo·bizinfo_other·bizinfo_central 네 명령만 `--days 4` 대신 `--from 2026-10-20 --to 2026-10-27`로 실행하세요 (10/20~10/26 수집 실패로 밀린 분, 약 40건 추가). 다른 날은 `--days 4` 그대로.
 - riia: https://cb.riia.or.kr/board/businessAnnouncement (충북 지역혁신클러스터 사업공고)
-- mss: https://www.mss.go.kr/site/smba/ex/bbs/List.do?cbIdx=310 (중기부 사업공고)
+- mss·bizinfo·bizinfo_other·bizinfo_central은 **공공데이터포털 기업마당 API**(`G2B_SERVICE_KEY`와 같은 키)로 받아 소관기관으로 나눕니다. www.mss.go.kr·www.bizinfo.go.kr은 클라우드에서 연결이 끊기므로(2026-10-20~) 첨부는 받지 못할 수 있습니다 — brief 맨 아래 `⚠ 읽지 못한 첨부`에 `(다운로드 실패)`로 나오면 본문(사업개요·지원대상)으로 판정하고, 본문만으로 과업·자격을 확정할 수 없으면 읽지 못한 첨부와 같은 규칙(아래 2절)으로 `조건부` + `action`에 "원문 첨부(<파일명>) 직접 확인 필요"를 적으세요.
+- mss: 기업마당 공고 중 **소관이 중소벤처기업부**인 공고(창업진흥원·소진공·중진공·지방중기청 수행분 포함). 키워드 필터 없음
 - bizinfo: 기업마당 지원사업 중 **충북·충남**, 접수중
 - bizinfo_other: 기업마당 지원사업 중 **그 외 14개 시·도**, 접수중. 대부분 해당 지역 소상공인 전용이라 `bizinfo_keywords.txt`로 공고명 1차 필터를 거친 것만 남습니다.
 - nipa: https://www.nipa.kr/home/2-2 (정보통신산업진흥원 사업공고 — XR 센터 입주·쇼룸처럼 기업마당에 없는 공고가 있음)
-- bizinfo_central: 기업마당 지원사업 중 **소관이 중앙부처**인 공고(KOCCA·NIPA·중기부·산업부 등 국비 사업, `[충북]` 말머리가 붙은 국비 공고 포함), 접수중. 지역 조건 쿼리(bizinfo·bizinfo_other)에는 나오지 않습니다. `bizinfo_keywords.txt`로 1차 필터.
+- bizinfo_central: 기업마당 지원사업 중 **소관이 중앙부처**인 공고(KOCCA·NIPA·산업부 등 국비 사업, `[충북]` 말머리가 붙은 국비 공고 포함, 중기부 소관은 mss로), 접수중. `bizinfo_keywords.txt`로 1차 필터.
 - 기업마당은 충북과기혁신원·중기부 공고를 재게시하므로 **이 순서대로** 실행해야 `--dedupe`가 앞 소스와 `state/seen.json`의 같은 공고를 걸러냅니다. 한 사이트가 실패해도 나머지는 진행하고 최종 응답에 적으세요.
 
 **수집 0건인 소스는 판정·링크 발송·seen 기록을 생략합니다.** 0건 여부는 3절의 한 줄 요약에만 반영되며(모든 소스가 0건이면 "신규 공고 없음"), 그 외 "0건" 알림은 보내지 마세요. 모든 소스가 **실패**(0건이 아니라 오류)한 경우에만 Discord로 오류 내용을 보내고 종료합니다.

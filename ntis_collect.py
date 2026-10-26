@@ -560,7 +560,7 @@ def attachment_sections(atts: list[dict], excerpt=make_brief, heading: str = "�
         if not docs:
             text += [f"## 첨부: {a['name']}", "", "(텍스트 추출 없음/불가)", ""]
             if a.get("path") or a.get("skipped"):   # 내려받았는데(또는 용량 초과로) 못 읽은 것
-                unread.append(a["name"] + (" (용량 초과)" if a.get("skipped") == "too_big" else ""))
+                unread.append(a["name"] + {"too_big": " (용량 초과)", "download_failed": " (다운로드 실패)"}.get(a.get("skipped"), ""))
             continue
         for label, t, form in docs:
             text += [f"## 첨부: {label}", "", t, ""]
