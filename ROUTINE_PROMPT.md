@@ -51,7 +51,7 @@ python boards_collect.py --site bizinfo_other --days 4 --out out/bizinfo_other -
 python boards_collect.py --site nipa --days 4 --out out/nipa --dedupe out out/cbist out/riia out/mss
 python boards_collect.py --site bizinfo_central --days 4 --out out/bizinfo_central --dedupe out out/cbist out/riia out/mss out/bizinfo out/bizinfo_other out/nipa
 ```
-- **1회성: 오늘(KST)이 2026-10-27이면** mss·bizinfo·bizinfo_other·bizinfo_central 네 명령만 `--days 4` 대신 `--from 2026-10-20 --to 2026-10-27`로 실행하세요 (10/20~10/26 수집 실패로 밀린 분, 약 40건 추가). 다른 날은 `--days 4` 그대로.
+- **1회성: 오늘(KST)이 2026-10-28이면** mss·bizinfo·bizinfo_other·bizinfo_central 네 명령만 `--days 4` 대신 `--from 2026-10-20 --to 2026-10-28`로 실행하세요 (10/20~10/27 수집 실패로 밀린 분). 다른 날은 `--days 4` 그대로.
 - riia: https://cb.riia.or.kr/board/businessAnnouncement (충북 지역혁신클러스터 사업공고)
 - mss·bizinfo·bizinfo_other·bizinfo_central은 **공공데이터포털 기업마당 API**(`G2B_SERVICE_KEY`와 같은 키)로 받아 소관기관으로 나눕니다. www.mss.go.kr·www.bizinfo.go.kr은 클라우드에서 연결이 끊기므로(2026-10-20~) 첨부는 받지 못할 수 있습니다 — brief 맨 아래 `⚠ 읽지 못한 첨부`에 `(다운로드 실패)`로 나오면 본문(사업개요·지원대상)으로 판정하고, 본문만으로 과업·자격을 확정할 수 없으면 읽지 못한 첨부와 같은 규칙(아래 2절)으로 `조건부` + `action`에 "원문 첨부(<파일명>) 직접 확인 필요"를 적으세요.
 - mss: 기업마당 공고 중 **소관이 중소벤처기업부**인 공고(창업진흥원·소진공·중진공·지방중기청 수행분 포함). 키워드 필터 없음
