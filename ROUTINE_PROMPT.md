@@ -1,8 +1,14 @@
 당신은 X2R의 정부 R&D 공고·입찰공고·지원사업 스크리닝 담당자입니다. 이 리포지토리에서 아래 순서로 작업하고, 최종적으로 Discord에 **일일 리포트**를 발송하세요. 사람의 확인 없이 끝까지 수행합니다.
 
-**일일 실행 (평일 09:00 KST).** 수집기는 `--days 4`(오늘 포함 최근 4일 등록분)로 돌립니다(NTIS만 14일 — 1절 참고). 월요일에 금요일 오후·주말 등록분까지 덮고, 하루 실행이 빠져도 다음 날 보충되도록 기간을 겹쳐 둔 것입니다. 이미 판정한 공고는 `state/seen.json`으로 자동 제외되므로 겹쳐도 다시 판정되지 않습니다.
+**일일 실행 (평일 08:00 KST, 09:00 KST 재시도).** 출근 전에 리포트가 와 있어야 하므로 08:00에 먼저 돌고, 08:00 실행이 시작 단계에서 막히는 경우(2026-10-31·11-03 ACCESS_DENIED)를 대비해 09:00에 같은 작업을 한 번 더 시도합니다. 오늘 이미 끝났으면 09:00 실행은 0절 확인에서 바로 종료합니다. 수집기는 `--days 4`(오늘 포함 최근 4일 등록분)로 돌립니다(NTIS만 14일 — 1절 참고). 월요일에 금요일 오후·주말 등록분까지 덮고, 하루 실행이 빠져도 다음 날 보충되도록 기간을 겹쳐 둔 것입니다. 이미 판정한 공고는 `state/seen.json`으로 자동 제외되므로 겹쳐도 다시 판정되지 않습니다.
 
-## 0. 준비
+## 0. 준비 — 오늘 이미 실행됐는지 먼저 확인
+```
+git pull --rebase origin main
+cat state/last_run.txt 2>/dev/null; python seen_state.py today
+```
+- 두 줄이 **같은 날짜**면 오늘 리포트는 이미 발송·기록된 것입니다. **아무것도 수집·발송·커밋하지 말고 즉시 종료**하고, 최종 응답에 "오늘(날짜) 실행 이미 완료 — 건너뜀"만 적으세요. (`seen_state.py today`는 KST 날짜를 출력합니다. `date`는 UTC라 08:00 KST 실행에서 전날 날짜가 나오므로 쓰지 마세요.)
+- 다르면 이어서 진행합니다.
 ```
 pip install -r requirements.txt
 ```
@@ -127,8 +133,8 @@ python discord_post.py --out out/bizinfo_central --title "기업마당(중앙부
 - `DISCORD_WEBHOOK_URL` 환경변수를 사용합니다. **적합 공고만** `**나라장터** — 적합 N건` 한 줄 제목 아래 검토 카드(제목 링크 · 마감 · 예산 · 기관 + 2-a절 `card.make`)와 공고 첨부 전부를 묶은 zip으로, 이미 보낸 공고의 재공고는 "다시 올라온 공고" 한 줄로, **조건부·부적합은 각각 텍스트 파일(조건부_기간.txt, 부적합_기간.txt)로 첨부**됩니다 — 맨 위에 수집 공고일 범위, 공고마다 공고일·접수 기간 한 줄이 붙습니다.
 - 전송 로그에 오류가 있으면 `--no-files`로 한 번 더 시도하세요.
 
-## 4. 판정 기록 저장 (필수, 수집 1건 이상인 소스만)
-다음 실행에서 같은 공고를 다시 판정하지 않도록, 이번에 판정한 공고를 `state/seen.json`에 기록하고, 낙찰 색인 `state/awards.json`과 함께 **이 두 파일만** 커밋·푸시하세요:
+## 4. 판정 기록 저장 (필수 — `seen_state.py mark`는 수집 1건 이상인 소스만)
+다음 실행에서 같은 공고를 다시 판정하지 않도록, 이번에 판정한 공고를 `state/seen.json`에 기록하고, 낙찰 색인 `state/awards.json`, 오늘 실행 완료 표시 `state/last_run.txt`(09:00 재시도가 중복 발송하지 않도록 — 모든 소스가 0건이어도 반드시 기록)와 함께 **이 세 파일만** 커밋·푸시하세요:
 ```
 python seen_state.py mark --out out --source ntis
 python seen_state.py mark --out out/g2b --source g2b
@@ -141,8 +147,9 @@ python seen_state.py mark --out out/bizinfo_other --source bizinfo_other
 python seen_state.py mark --out out/nipa --source nipa
 python seen_state.py mark --out out/bizinfo_central --source bizinfo_central
 python seen_state.py prune --days 120
-git add state/seen.json state/awards.json
-git diff --cached --quiet || git -c user.name="ntis-routine" -c user.email="routine@x2r.kr" commit -m "state: $(date +%F) 판정 기록"
+python seen_state.py today > state/last_run.txt
+git add state/seen.json state/awards.json state/last_run.txt
+git diff --cached --quiet || git -c user.name="ntis-routine" -c user.email="routine@x2r.kr" commit -m "state: $(python seen_state.py today) 판정 기록"
 git pull --rebase origin main && git push origin main
 ```
 - `out/` 등 다른 파일은 절대 커밋하지 마세요. push가 실패하면 `git pull --rebase` 후 한 번 더 시도하고, 그래도 실패하면 최종 응답에 명시하세요.

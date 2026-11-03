@@ -12,6 +12,7 @@
   python seen_state.py mark --out out --source ntis
   python seen_state.py mark --out out/g2b --source g2b
   python seen_state.py prune --days 120        # 오래된 기록 정리
+  python seen_state.py today                   # 오늘 날짜(KST) 출력
 """
 from __future__ import annotations
 
@@ -21,8 +22,14 @@ import json
 import re
 import sys
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 DEFAULT_PATH = Path(__file__).resolve().parent / "state" / "seen.json"
+
+
+def today_kst() -> dt.date:
+    # 08:00 KST 실행은 UTC로 전날 23:00이라 date.today()를 쓰면 하루 밀린다
+    return dt.datetime.now(ZoneInfo("Asia/Seoul")).date()
 
 
 def load_seen(path: Path = DEFAULT_PATH) -> dict:
@@ -91,7 +98,7 @@ def mark(out: Path, source: str, path: Path = DEFAULT_PATH) -> int:
     verdicts = {str(r["uid"]): r.get("verdict", "") for r in results}
     data = load_seen(path)
     bucket = data.setdefault(source, {})
-    today = dt.date.today().isoformat()
+    today = today_kst().isoformat()
     n = 0
     for uid, title in titles.items():
         if uid in bucket:
@@ -105,7 +112,7 @@ def mark(out: Path, source: str, path: Path = DEFAULT_PATH) -> int:
 
 def prune(days: int, path: Path = DEFAULT_PATH) -> None:
     data = load_seen(path)
-    cutoff = (dt.date.today() - dt.timedelta(days=days)).isoformat()
+    cutoff = (today_kst() - dt.timedelta(days=days)).isoformat()
     removed = 0
     for src, bucket in data.items():
         for uid in [u for u, v in bucket.items() if v.get("judged_at", "") < cutoff]:
@@ -125,8 +132,11 @@ def main() -> int:
     p = sub.add_parser("prune")
     p.add_argument("--days", type=int, default=120)
     p.add_argument("--state", default=str(DEFAULT_PATH))
+    sub.add_parser("today")
     a = ap.parse_args()
-    if a.cmd == "mark":
+    if a.cmd == "today":
+        print(today_kst().isoformat())
+    elif a.cmd == "mark":
         mark(Path(a.out), a.source, Path(a.state))
     else:
         prune(a.days, Path(a.state))
