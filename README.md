@@ -4,7 +4,7 @@
 `company_profile.md` 기준으로 X2R이 제안 가능한지 판정해 Discord 채널로 발송한다.
 
 ```
-┌ Claude Code 클라우드 routine (평일 08:00 KST + 09:00 재시도, cron 0 23 * * 0-4 / 0 0 * * 1-5 UTC) ┐
+┌ Claude Code 클라우드 routine (평일 09:00 KST, cron 0 0 * * 1-5 UTC) ┐
 │ 1. ntis / g2b / cbist / boards(riia·mss·bizinfo) → out/*/brief/<uid>.md │
 │ 2. Claude가 company_profile.md 기준으로 판정 → out/results.json       │
 │ 3. python discord_post.py   → Discord 웹훅 (적합·조건부 링크 목록만)    │
