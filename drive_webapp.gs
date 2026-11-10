@@ -38,7 +38,7 @@ function handle_(q) {
     if (!it.hasNext()) return {url: root.createFile(blob).getUrl()};
     const f = it.next();
     try {
-      Drive.Files.update({}, f.getId(), blob);   // 편집기 왼쪽 "서비스"에 Drive API를 추가해야 동작
+      Drive.Files.update({}, f.getId(), blob, {supportsAllDrives: true});   // 편집기 왼쪽 "서비스"에 Drive API를 추가해야 동작 (공유 드라이브 안의 파일은 supportsAllDrives 필요)
       return {url: f.getUrl()};
     } catch (err) {                    // Drive 서비스가 없으면 새 파일로 교체 (파일 링크가 바뀜)
       const url = root.createFile(blob).getUrl();

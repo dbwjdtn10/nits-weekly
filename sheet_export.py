@@ -77,7 +77,10 @@ class Drive:
         return base64.b64decode(d["b64"]) if d.get("exists") else None
 
     def put_sheet(self, name: str, data: bytes) -> str:
-        return self.call(action="put", name=name, b64=base64.b64encode(data).decode())["url"]
+        d = self.call(action="put", name=name, b64=base64.b64encode(data).decode())
+        if d.get("recreated"):
+            log("  ! 엑셀을 새 파일로 교체함(파일 링크 바뀜) — 웹앱에 Drive API 서비스가 없거나 실패: " + str(d["recreated"])[:120])
+        return d["url"]
 
     def folder(self, name: str) -> str:
         return self.call(action="folder", name=name)["url"]
