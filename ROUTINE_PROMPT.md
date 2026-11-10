@@ -10,8 +10,10 @@ cat state/last_run.txt 2>/dev/null; python seen_state.py today
 - 두 줄이 **같은 날짜**면 오늘 리포트는 이미 발송·기록된 것입니다. **아무것도 수집·발송·커밋하지 말고 즉시 종료**하고, 최종 응답에 "오늘(날짜) 실행 이미 완료 — 건너뜀"만 적으세요. (`seen_state.py today`는 KST 날짜를 출력합니다. `date`는 UTC라 KST 09:00 이전에 돌리면 전날 날짜가 나오므로 쓰지 마세요.)
 - 다르면 이어서 진행합니다.
 ```
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+python -c "import requests, pypdf, olefile, cryptography; print('ok')"
 ```
+- **`pip`가 아니라 `python -m pip`** 로 설치하세요. 이 컨테이너는 `pip`(Python 3.13용)와 `python`(3.11)의 버전이 달라, `pip install`은 성공해도 수집기가 전부 `ModuleNotFoundError: requests`로 실패합니다(2026-11-10). 둘째 줄에서 import가 실패하는 패키지는 `python -m pip install --ignore-installed <패키지>`로 다시 설치하세요(시스템 cryptography가 낡아 업그레이드가 막히는 경우가 있음).
 
 ## 1. 수집
 ```
