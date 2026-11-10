@@ -727,7 +727,12 @@ def collect(site, a, out: Path, date_from: str, date_to: str, known: list) -> li
         if not a.no_attach:
             for att in d["attachments"]:
                 try:
-                    p = download_attachment(att, out / "attachments" / r["uid"])
+                    try:
+                        p = download_attachment(att, out / "attachments" / r["uid"])
+                    except Exception as e:  # noqa: BLE001 — 클라우드 프록시가 가끔 연결을 끊는다. 한 번만 다시 받는다
+                        log(f"  ! 첨부 재시도 {att['name'][:40]}: {str(e)[-90:]}")
+                        time.sleep(2)
+                        p = download_attachment(att, out / "attachments" / r["uid"])
                     if p:
                         att["path"] = str(p.relative_to(out))
                         att["size"] = p.stat().st_size
