@@ -8,6 +8,7 @@
 │ 1. ntis / g2b / boards(충북·충남 묶음, mss·bizinfo·nipa) → out/*/brief/<uid>.md │
 │ 2. Claude가 company_profile.md 기준으로 판정 → out/results.json       │
 │ 3. python discord_post.py   → Discord 웹훅 (적합·조건부 링크 목록만)    │
+│ 3-b. python sheet_export.py → 구글 드라이브 엑셀에 적합 본공고 한 줄씩  │
 │ 4. python seen_state.py mark → state/seen.json 커밋 (재판정 방지)       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -25,6 +26,8 @@
 | `bizinfo_keywords.txt` | 기업마당 타지역(`bizinfo_other`) 공고명 1차 필터 포함/제외 키워드 |
 | `discord_post.py` | `out/results.json` + `out/announcements.json`을 Discord 웹훅으로 발송. 기본: **적합은 검토 카드**(만들 것·비슷한 실적·기간·평가·제출·확인할 점 — results.json `card`), 이미 보낸 적합 공고의 재공고는 "다시 올라온 공고" 한 줄, 조건부·부적합은 판정별 txt 첨부 (`--format embed`로 상세 embed+첨부, `--send`로 대상 판정 변경) |
 | `daily_summary.py` | 매일 Discord 맨 앞 한 줄 요약 (`📋 10/01 공고 확인 — 나라장터 45 · NTIS 4건 중 적합 2건`). 적합 0건이어도 발송해 routine 동작 여부를 알 수 있게 함 |
+| `sheet_export.py` | Discord 발송 뒤 **적합 본공고(사전규격 제외)를 구글 드라이브 폴더의 엑셀 `적합공고.xlsx`에 한 줄씩** 덧붙인다 (사업명·등록일·마감일·만들것·첨부파일). 엑셀은 내려받아 줄만 붙이고 같은 파일로 다시 올리므로 링크가 그대로이고 사람이 고친 내용도 남는다. 공고마다 드라이브에 폴더를 만들어 첨부를 올리고 첨부파일 칸에 폴더 링크를 건다(첨부를 못 받은 공고는 공고 원문 링크). 재공고는 새 줄 대신 기존 줄의 마감일을 고친다. `DRIVE_WEBAPP_URL`이 없으면 건너뜀. `--local 폴더`로 드라이브 없이 모양 확인 |
+| `drive_webapp.gs` | 위 스크립트가 호출하는 Google Apps Script 웹앱 원본 — 아래 "구글 드라이브 연결" 참고 |
 | `seen_state.py` / `state/seen.json` | 이미 판정한 공고 기록. 수집기가 자동으로 제외하며, routine이 매일 커밋 |
 | `company_profile.md` | **X2R 프로필 + 판정 규칙** — 판정 품질을 좌우하므로 꼼꼼히 유지 |
 | `ROUTINE_PROMPT.md` | 클라우드 routine에 넣는 프롬프트 원본 |
@@ -63,14 +66,27 @@ claude.ai/code → 입력창 위 구름 아이콘(환경 이름) → Default 위
   www.bizinfo.go.kr
   www.msit.go.kr
   www.nipa.kr
+  script.google.com
+  script.googleusercontent.com
   ```
   (`*.cbtp.or.kr`은 충북테크노파크 산하 센터 게시판의 첨부용 — semicon·pbi 등. `www.bizinfo.go.kr`은 기업마당 첨부용인데 2026-10-20부터 클라우드에서 연결이 끊긴다. `www.mss.go.kr`은 같은 이유로, 그리고 기업마당 API가 중기부 홈페이지 공고를 포괄해서 쓰지 않는다.)
 - **Environment variables**:
   ```
   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
   G2B_SERVICE_KEY=공공데이터포털 일반 인증키(Decoding)   # https://www.data.go.kr/data/15129394/openapi.do 활용신청(자동승인). 기업마당 API(15157820)도 같은 키로 활용신청
+  DRIVE_WEBAPP_URL=https://script.google.com/macros/s/.../exec   # 적합 공고 엑셀 정리용 (아래 "구글 드라이브 연결"). 없으면 엑셀 정리만 건너뜀
   ```
 - **Setup script**: `pip install -r requirements.txt`
+
+## 구글 드라이브 연결 (적합 공고 엑셀, 1회)
+클라우드에서 드라이브에 파일을 올리려면 드라이브 주인 계정으로 만든 작은 웹앱이 필요하다 (`script.google.com`, `script.googleusercontent.com`을 허용 도메인에 추가).
+1. 엑셀·첨부를 둘 드라이브 폴더를 열고 주소창의 링크를 복사한다.
+2. https://script.google.com → **새 프로젝트** → 기본 코드를 지우고 `drive_webapp.gs` 내용을 전부 붙여 넣은 뒤, 맨 위 `FOLDER` 따옴표 안에 1의 폴더 링크를 넣고 저장.
+3. 왼쪽 **서비스** 옆 `+` → **Drive API** → 추가. (엑셀 링크가 매일 바뀌지 않게 하는 데 필요)
+4. 위쪽 함수 선택에서 `setup`을 고르고 **실행** → 권한 검토 → 계정 선택 → "고급" → "(안전하지 않음)으로 이동" → 허용. 실행 로그에 `연결된 폴더: (폴더 이름)`이 나오면 정상.
+5. **배포 → 새 배포** → 유형 **웹 앱** → 실행 계정 **나**, 액세스 권한 **모든 사용자** → 배포 → **웹 앱 URL**(`.../exec`) 복사.
+6. 그 URL을 클라우드 환경변수 `DRIVE_WEBAPP_URL`과 로컬 `test.env`(`DRIVE_WEBAPP_URL=...`)에 넣는다. Discord 웹훅처럼 주소를 아는 사람은 그 폴더에 파일을 올릴 수 있으므로 공유하지 않는다.
+- 코드를 고치면 **배포 → 배포 관리 → 수정(연필) → 버전: 새 버전**으로 다시 배포해야 반영된다 (URL은 그대로).
 
 ## NTIS 사이트 메모 (2026-09 기준)
 - 목록: `POST /rndgate/eg/un/ra/mng.do` — `searchCondition2/3=YYYY-MM-DD`(등록기간), `pageUnit=100`, `pageIndex=n`

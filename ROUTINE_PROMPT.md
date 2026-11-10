@@ -11,7 +11,7 @@ cat state/last_run.txt 2>/dev/null; python seen_state.py today
 - 다르면 이어서 진행합니다.
 ```
 python -m pip install -r requirements.txt
-python -c "import requests, pypdf, olefile, cryptography; print('ok')"
+python -c "import requests, pypdf, olefile, cryptography, openpyxl; print('ok')"
 ```
 - **`pip`가 아니라 `python -m pip`** 로 설치하세요. 이 컨테이너는 `pip`(Python 3.13용)와 `python`(3.11)의 버전이 달라, `pip install`은 성공해도 수집기가 전부 `ModuleNotFoundError: requests`로 실패합니다(2026-11-10). 둘째 줄에서 import가 실패하는 패키지는 `python -m pip install --ignore-installed <패키지>`로 다시 설치하세요(시스템 cryptography가 낡아 업그레이드가 막히는 경우가 있음).
 
@@ -119,6 +119,7 @@ Discord에는 적합 공고가 **검토 카드**(제목 링크 · 마감 · 예�
 ### 2-b. 재공고·사전규격의 본공고 (나라장터 brief의 `🔁 재공고` / `📢 사전규격의 본공고` 줄)
 - 이전에 판정한 공고가 재공고·정정공고로 번호가 바뀌어 다시 수집됐거나, 사전규격으로 판정한 공고의 본공고가 올라온 것입니다. 평소처럼 판정하되, 이전 판정도 참고하세요.
 - 이전 판정이 적합이고 이번에도 적합이면 Discord에는 카드 대신 "다시 올라온 공고" 한 줄로 나갑니다(사전규격의 본공고는 "본공고 올라옴"). 이때는 `card` 대신 `changes`에 이번 공고에서 확인되는 변경 사항(공고종류, 정정 사유, 마감일, 사전규격 대비 바뀐 참가자격·예산 등)을 한 줄로 적으세요. 확인할 수 없으면 비워 두세요.
+- **사전규격의 본공고**(`📢`)가 적합이면 `changes`와 함께 `card.make`(2-a절)도 적으세요 — Discord에는 한 줄로 나가지만, 3-b절 엑셀에는 본공고가 이때 처음 올라가므로 "만들것" 칸에 쓰입니다.
 
 ## 3. 발송
 먼저 **한 줄 요약**을 보냅니다 (매일 1회, 적합 0건이어도 보냄 — routine이 돌았다는 표시). 수집 0건인 소스는 줄에서 자동으로 빠지고, 수집에 실패한 소스(`announcements.json` 없음)는 "⚠ 수집 실패"로, 묶음 안에서 일부 기관만 실패했으면 "충북 중 충북테크노파크 수집 실패"로 붙습니다:
@@ -143,6 +144,15 @@ python discord_post.py --out out/bizinfo_central --title "기업마당(중앙부
 - `DISCORD_WEBHOOK_URL` 환경변수를 사용합니다. **적합 공고만** `**나라장터** — 적합 N건` 한 줄 제목 아래 검토 카드(제목 링크 · 마감 · 예산 · 기관 + 2-a절 `card.make`)와 공고 첨부 전부를 묶은 zip으로, 이미 보낸 공고의 재공고는 "다시 올라온 공고" 한 줄로, **조건부·부적합은 각각 텍스트 파일(조건부_기간.txt, 부적합_기간.txt)로 첨부**됩니다 — 맨 위에 수집 공고일 범위, 공고마다 공고일·접수 기간 한 줄이 붙습니다.
 - 전송 로그에 오류가 있으면 `--no-files`로 한 번 더 시도하세요.
 
+## 3-b. 적합 공고 엑셀 정리 (구글 드라이브)
+Discord 발송이 끝난 뒤, 적합 판정 **본공고**(사전규격 제외)를 구글 드라이브 폴더의 엑셀(`적합공고.xlsx`)에 한 줄씩 덧붙이고 공고 첨부를 공고별 폴더에 올립니다:
+```
+python sheet_export.py out out/g2b out/chungbuk out/chungnam out/mss out/bizinfo out/bizinfo_other out/nipa out/msit out/bizinfo_central
+```
+- 수집하지 않았거나 판정이 없는 폴더는 알아서 건너뛰므로 **항상 이 명령 그대로** 실행하세요. `out/g2b_pre`는 넣지 않습니다. 적합이 0건이면 아무것도 하지 않습니다.
+- 환경변수 `DRIVE_WEBAPP_URL`이 없으면 "건너뜀"만 출력하고 끝납니다 — 정상입니다. 이 주소는 비밀이므로 출력하거나 최종 응답에 적지 마세요.
+- 오류로 끝나면 한 번 더 실행하고(이미 올라간 줄·파일은 다시 올리지 않음), 그래도 실패하면 4절로 넘어가되 최종 응답에 "엑셀 정리 실패"와 오류 문구를 적으세요.
+
 ## 4. 판정 기록 저장 (필수 — `seen_state.py mark`는 수집 1건 이상인 소스만)
 다음 실행에서 같은 공고를 다시 판정하지 않도록, 이번에 판정한 공고를 `state/seen.json`에 기록하고, 낙찰 색인 `state/awards.json`, 오늘 실행 완료 표시 `state/last_run.txt`(같은 날 다시 실행돼도 중복 발송하지 않도록 — 모든 소스가 0건이어도 반드시 기록)와 함께 **이 세 파일만** 커밋·푸시하세요:
 ```
@@ -166,4 +176,4 @@ git pull --rebase origin main && git push origin main
 - `out/` 등 다른 파일은 절대 커밋하지 마세요. push가 실패하면 `git pull --rebase` 후 한 번 더 시도하고, 그래도 실패하면 최종 응답에 명시하세요.
 
 ## 5. 마무리
-- 최종 응답에 소스별 수집 건수(제외 건수 포함), 판정 분포, 발송 결과, seen.json 커밋 여부를 요약하세요.
+- 최종 응답에 소스별 수집 건수(제외 건수 포함), 판정 분포, 발송 결과, 엑셀 정리 결과(추가·고침 줄 수 또는 건너뜀·실패), seen.json 커밋 여부를 요약하세요.

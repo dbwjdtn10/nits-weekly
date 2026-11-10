@@ -3,3 +3,4 @@ pypdf>=4.0
 olefile>=0.46
 cffi>=1.16
 cryptography>=42
+openpyxl>=3.1

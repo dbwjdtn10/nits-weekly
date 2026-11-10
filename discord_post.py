@@ -116,10 +116,9 @@ MAX_ZIP = 9 * 1024 * 1024   # 공고 첨부 zip 상한 (Discord 무료 서버 �
 DOC_MAIN = re.compile(r"공고|제안\s*요청|과업|규격|사양|지침|안내서|설명서")
 
 
-def bundle_docs(it: dict, out: Path) -> tuple[Path | None, list[str], list[dict]]:
-    """적합 공고의 첨부 전부(HWP·PDF·서식)를 zip 하나로 묶는다 — 나라장터 '다운로드' 버튼처럼 한 번에 받기.
-    수집기가 판정용으로 고르느라 안 받은 파일(나라장터 HWP본·서식 등)은 여기서 받는다.
-    반환: (zip, zip에 넣은 파일 이름, 못 넣은 첨부 — 링크로 안내)"""
+def gather_docs(it: dict, out: Path) -> tuple[list[tuple[dict, Path]], list[dict]]:
+    """공고 첨부 전부(HWP·PDF·서식)의 로컬 파일. 수집기가 판정용으로 고르느라 안 받은 파일(나라장터 HWP본·서식 등)은 여기서 받는다.
+    반환: ([(첨부, 파일 경로)], 받지 못한 첨부)"""
     dest = out / "bundle" / re.sub(r"[^0-9A-Za-z_-]", "_", it["uid"])
     got, missed = [], []
     for att in it.get("attachments", []):
@@ -143,6 +142,13 @@ def bundle_docs(it: dict, out: Path) -> tuple[Path | None, list[str], list[dict]
             got.append((att, p))
         else:
             missed.append(att)
+    return got, missed
+
+
+def bundle_docs(it: dict, out: Path) -> tuple[Path | None, list[str], list[dict]]:
+    """적합 공고의 첨부 전부를 zip 하나로 묶는다 — 나라장터 '다운로드' 버튼처럼 한 번에 받기.
+    반환: (zip, zip에 넣은 파일 이름, 못 넣은 첨부 — 링크로 안내)"""
+    got, missed = gather_docs(it, out)
     if not got:
         return None, [], missed
     got.sort(key=lambda x: 0 if DOC_MAIN.search(x[0].get("name", "")) else 1)   # 용량이 넘치면 공고문·과업 문서부터
