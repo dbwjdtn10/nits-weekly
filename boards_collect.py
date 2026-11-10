@@ -65,11 +65,21 @@ class LegacyTLS(HTTPAdapter):
     """충북TP 서버는 TLS 설정이 오래돼 기본 보안 수준에서는 연결이 거부된다 (www는 DH_KEY_TOO_SMALL, 센터 서브도메인은
     WRONG_SIGNATURE_TYPE) — cbtp.or.kr 호스트에만 수준을 낮춘다. 인증서 검증은 그대로 한다."""
 
-    def init_poolmanager(self, *args, **kw):
+    @staticmethod
+    def _context() -> ssl.SSLContext:
         ctx = ssl.create_default_context()
         ctx.set_ciphers("DEFAULT:@SECLEVEL=0")
-        kw["ssl_context"] = ctx
+        return ctx
+
+    def init_poolmanager(self, *args, **kw):
+        kw["ssl_context"] = self._context()
         return super().init_poolmanager(*args, **kw)
+
+    def proxy_manager_for(self, proxy, **proxy_kwargs):
+        # 클라우드 routine은 HTTPS_PROXY를 거쳐 나가는데, 이때 requests는 init_poolmanager가 아니라 이 경로로 연결을 만든다.
+        # 여기에도 같은 설정을 넣지 않으면 회사 PC에서는 되고 클라우드에서만 DH_KEY_TOO_SMALL로 실패한다 (2026-11-10 클라우드 테스트).
+        proxy_kwargs["ssl_context"] = self._context()
+        return super().proxy_manager_for(proxy, **proxy_kwargs)
 
 
 session.mount("https://www.cbtp.or.kr", LegacyTLS())
