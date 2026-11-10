@@ -52,21 +52,24 @@ python boards_collect.py --group chungnam --days 4 --out out/chungnam --dedupe o
 - 공고마다 어느 기관·게시판인지는 digest와 brief 머리의 `수행기관`·`분야`(사업공고 / 입찰공고 등)에 있습니다.
 - **묶음 안에서 한 사이트가 실패해도 나머지는 수집됩니다.** 로그 끝에 `(수집 실패: 기관명)`이 붙으면 그 묶음 명령을 한 번 더 실행하고, 그래도 실패하면 그대로 진행하세요 — 실패한 기관 이름은 3절 요약 줄에 자동으로 붙습니다. 최종 응답에도 적으세요.
 - 충북테크노파크·천안문화재단은 목록에 등록일이 없어 **접수 중이고 아직 판정하지 않은 공고가 모두** 들어옵니다(처음 추가한 날에만 여러 건, 이후에는 새 글만). 선정·평가·입찰 **결과 공고**는 새로 추가한 기관(충북TP·충남 4곳)에서 자동 제외됩니다.
-- 중소벤처기업부 충북·충남 지방청 게시판(www.mss.go.kr)은 클라우드에서 연결이 끊겨 수집하지 않습니다. 기업마당에 올라온 중기부 소관 공고는 아래 mss 소스로 들어옵니다.
+- 중소벤처기업부 충북·충남 지방청 게시판은 수집하지 않습니다. 중기부 공고는 아래 중기부 묶음으로 들어옵니다.
 
-## 1-d. 중소벤처기업부 / 기업마당 / NIPA 수집
+## 1-d. 중소벤처기업부 / 기업마당 / NIPA / 과학기술정보통신부 수집
 ```
-python boards_collect.py --site mss --days 4 --out out/mss --dedupe out out/chungbuk out/chungnam
+python boards_collect.py --group mss --days 4 --out out/mss --dedupe out out/chungbuk out/chungnam
 python boards_collect.py --site bizinfo --days 4 --out out/bizinfo --dedupe out out/chungbuk out/chungnam out/mss
 python boards_collect.py --site bizinfo_other --days 4 --out out/bizinfo_other --dedupe out out/chungbuk out/chungnam out/mss out/bizinfo
 python boards_collect.py --site nipa --days 4 --out out/nipa --dedupe out out/chungbuk out/chungnam out/mss
-python boards_collect.py --site bizinfo_central --days 4 --out out/bizinfo_central --dedupe out out/chungbuk out/chungnam out/mss out/bizinfo out/bizinfo_other out/nipa
+python boards_collect.py --site msit --days 4 --out out/msit --dedupe out out/chungbuk out/chungnam out/mss out/nipa
+python boards_collect.py --site bizinfo_central --days 4 --out out/bizinfo_central --dedupe out out/chungbuk out/chungnam out/mss out/bizinfo out/bizinfo_other out/nipa out/msit
 ```
-- mss·bizinfo·bizinfo_other·bizinfo_central은 **공공데이터포털 기업마당 API**(`G2B_SERVICE_KEY`와 같은 키)로 받아 소관기관으로 나눕니다. www.mss.go.kr·www.bizinfo.go.kr은 클라우드에서 연결이 끊기므로(2026-10-20~) 첨부는 받지 못할 수 있습니다 — brief 맨 아래 `⚠ 읽지 못한 첨부`에 `(다운로드 실패)`로 나오면 본문(사업개요·지원대상)으로 판정하고, 본문만으로 과업·자격을 확정할 수 없으면 읽지 못한 첨부와 같은 규칙(아래 2절)으로 `조건부` + `action`에 "원문 첨부(<파일명>) 직접 확인 필요"를 적으세요.
-- mss: 기업마당 공고 중 **소관이 중소벤처기업부**인 공고(창업진흥원·소진공·중진공·지방중기청 수행분 포함). 키워드 필터 없음
+- **중기부 묶음**(`--group mss`, `out/mss`): 중기부 홈페이지 사업공고(www.mss.go.kr cbIdx=310)를 먼저 받고, 이어서 기업마당 API의 중기부 소관 공고를 받아 한 폴더에 모읍니다(같은 제목은 중복으로 빠짐). 홈페이지에는 본부가 직접 내는 공고 중 기업마당에 없는 것이 있습니다. **www.mss.go.kr은 2026-10-20부터 클라우드에서 연결이 끊겼던 사이트**라 실패할 수 있습니다 — 로그 끝에 `(수집 실패: 중기부 홈페이지)`가 나와도 **재시도하지 말고** 그대로 진행하세요(API 쪽은 수집됨, 요약 줄에 자동 표시).
+- bizinfo·bizinfo_other·bizinfo_central과 중기부 묶음의 API 쪽은 **공공데이터포털 기업마당 API**(`G2B_SERVICE_KEY`와 같은 키)로 받아 소관기관으로 나눕니다. www.mss.go.kr·www.bizinfo.go.kr은 클라우드에서 연결이 끊기므로(2026-10-20~) 첨부는 받지 못할 수 있습니다 — brief 맨 아래 `⚠ 읽지 못한 첨부`에 `(다운로드 실패)`로 나오면 본문(사업개요·지원대상)으로 판정하고, 본문만으로 과업·자격을 확정할 수 없으면 읽지 못한 첨부와 같은 규칙(아래 2절)으로 `조건부` + `action`에 "원문 첨부(<파일명>) 직접 확인 필요"를 적으세요.
+- 중기부 묶음의 API 쪽: 기업마당 공고 중 **소관이 중소벤처기업부**인 공고(창업진흥원·소진공·중진공·지방중기청 수행분 포함). 키워드 필터 없음
 - bizinfo: 기업마당 지원사업 중 **충북·충남**, 접수중
 - bizinfo_other: 기업마당 지원사업 중 **그 외 14개 시·도**, 접수중. 대부분 해당 지역 소상공인 전용이라 `bizinfo_keywords.txt`로 공고명 1차 필터를 거친 것만 남습니다.
 - nipa: https://www.nipa.kr/home/2-2 (정보통신산업진흥원 사업공고 — XR 센터 입주·쇼룸처럼 기업마당에 없는 공고가 있음)
+- msit: https://www.msit.go.kr/bbs/list.do?sCode=user&mPid=121&mId=311 (과학기술정보통신부 사업공고). R&D 신규과제 공모는 NTIS에도 올라오므로 `--dedupe out`으로 겹치는 공고가 빠지고, 선정결과 공고는 자동 제외됩니다. 실패하면 한 번 재시도 후 건너뛰세요.
 - bizinfo_central: 기업마당 지원사업 중 **소관이 중앙부처**인 공고(KOCCA·NIPA·산업부 등 국비 사업, `[충북]` 말머리가 붙은 국비 공고 포함, 중기부 소관은 mss로), 접수중. `bizinfo_keywords.txt`로 1차 필터.
 - 기업마당은 충북·충남 기관(충북과기혁신원·테크노파크 등)과 중기부 공고를 재게시하므로 **1-c부터 이 순서대로** 실행해야 `--dedupe`가 앞 소스와 `state/seen.json`의 같은 공고를 걸러냅니다. 한 사이트가 실패해도 나머지는 진행하고 최종 응답에 적으세요.
 
@@ -85,7 +88,7 @@ python boards_collect.py --site bizinfo_central --days 4 --out out/bizinfo_centr
 4. 나라장터 공고(`out/g2b/`)는 용역 입찰이므로 2단계에서 **"입찰공고서 참가자격 발췌"의 입찰참가자격(업종 등록·직접생산확인증명·면허·공장등록·지역)과 헤더의 `구매대상물품` 세부품명번호를 company_profile.md 5절과 하나씩 대조**합니다. "다음 자격을 모두 갖춘 자"처럼 AND로 요구하는 자격 중 하나라도 ❌ 미보유이면 부적합, `[담당자 기재]`로 미확인이면 조건부입니다. 기초금액·마감일은 정보로만 전달하고 판정 사유로 쓰지 않습니다.
 5. **사전규격**(`out/g2b_pre/`)도 나라장터와 같은 2단계로 판정합니다. 차이점: 입찰 마감·평가방식이 아직 없고, 참가자격이 규격서(제안요청서)에 있으면 company_profile.md 5절과 대조하지만 **규격서에 참가자격이 없으면 그 이유만으로 조건부로 내리지 마세요** — 방향·명확성이 확실하면 적합으로 둡니다 (본공고가 올라오면 수집기가 연결해 참가자격까지 다시 판정하므로). 규격서에 있는 AND 자격 중 ❌ 미보유가 있으면 부적합입니다.
 6. **충북·충남 묶음의 `분야`가 입찰공고인 공고**(충남테크노파크·천안과학산업진흥원·천안문화재단·충남콘텐츠진흥원 입찰 게시판)는 기관이 자체 게시한 용역·구매 입찰입니다. 나라장터 공고와 같은 방식(위 4번)으로 첨부 공고문·과업지시서의 참가자격을 company_profile.md 5절과 대조해 판정하세요. 같은 입찰이 나라장터에도 올라와 이미 판정했다면 수집 단계에서 제목 중복으로 빠집니다.
-7. 결과를 `out/results.json`(NTIS), `out/g2b/results.json`(나라장터), `out/g2b_pre/results.json`(나라장터 사전규격), `out/chungbuk/results.json`(충북), `out/chungnam/results.json`(충남), `out/mss/results.json`, `out/bizinfo/results.json`, `out/bizinfo_other/results.json`, `out/nipa/results.json`, `out/bizinfo_central/results.json`에 각각 다음 형식으로 저장하세요 (모든 uid 포함):
+7. 결과를 `out/results.json`(NTIS), `out/g2b/results.json`(나라장터), `out/g2b_pre/results.json`(나라장터 사전규격), `out/chungbuk/results.json`(충북), `out/chungnam/results.json`(충남), `out/mss/results.json`, `out/bizinfo/results.json`, `out/bizinfo_other/results.json`, `out/nipa/results.json`, `out/msit/results.json`(과기부), `out/bizinfo_central/results.json`에 각각 다음 형식으로 저장하세요 (모든 uid 포함):
 ```json
 {
   "summary": "이번 수집분 총평 1~2문장 (예: 수집 7건 중 SW/AI 기업이 신청 가능한 공고 1건, 나머지는 대학·수요조사 위주)",
@@ -102,7 +105,7 @@ python boards_collect.py --site bizinfo_central --days 4 --out out/bizinfo_centr
   ]
 }
 ```
-- `budget`: 공고문에서 읽은 지원규모/예산/기초금액을 짧게 (예: "과제당 2억 이내", "총 10억", "기초금액 1.55억"). 수집기가 못 채운 NTIS·충북·충남·기업마당·중기부·NIPA 공고는 **반드시** 적을 것 — Discord 링크 줄에 표시된다.
+- `budget`: 공고문에서 읽은 지원규모/예산/기초금액을 짧게 (예: "과제당 2억 이내", "총 10억", "기초금액 1.55억"). 수집기가 못 채운 NTIS·충북·충남·기업마당·중기부·NIPA·과기부 공고는 **반드시** 적을 것 — Discord 링크 줄에 표시된다.
 - `score`: 0~100 제안 추천도. `conditions`: 신청자격·규모·마감·제출처 등 담당자가 바로 봐야 할 핵심 3~6개. `reason`: 1~3문장, 근거가 된 공고문 문구를 짧게 인용.
 
 ### 2-a. 적합 공고의 검토 카드 (`card`, 적합만 필수)
@@ -119,7 +122,7 @@ Discord에는 적합 공고가 **검토 카드**(제목 링크 · 마감 · 예�
 ## 3. 발송
 먼저 **한 줄 요약**을 보냅니다 (매일 1회, 적합 0건이어도 보냄 — routine이 돌았다는 표시). 수집 0건인 소스는 줄에서 자동으로 빠지고, 수집에 실패한 소스(`announcements.json` 없음)는 "⚠ 수집 실패"로, 묶음 안에서 일부 기관만 실패했으면 "충북 중 충북테크노파크 수집 실패"로 붙습니다:
 ```
-python daily_summary.py NTIS=out 나라장터=out/g2b 나라장터사전규격=out/g2b_pre 충북=out/chungbuk 충남=out/chungnam 중기부=out/mss "기업마당(충북·충남)=out/bizinfo" "기업마당(타지역)=out/bizinfo_other" NIPA=out/nipa "기업마당(중앙부처)=out/bizinfo_central"
+python daily_summary.py NTIS=out 나라장터=out/g2b 나라장터사전규격=out/g2b_pre 충북=out/chungbuk 충남=out/chungnam 중기부=out/mss "기업마당(충북·충남)=out/bizinfo" "기업마당(타지역)=out/bizinfo_other" NIPA=out/nipa 과기부=out/msit "기업마당(중앙부처)=out/bizinfo_central"
 ```
 그다음 적합 링크를 소스별로 보냅니다 (수집 1건 이상인 소스만 실행):
 ```
@@ -132,6 +135,7 @@ python discord_post.py --out out/mss --title "중기부"
 python discord_post.py --out out/bizinfo --title "기업마당(충북·충남)"
 python discord_post.py --out out/bizinfo_other --title "기업마당(타지역)"
 python discord_post.py --out out/nipa --title "NIPA"
+python discord_post.py --out out/msit --title "과기부"
 python discord_post.py --out out/bizinfo_central --title "기업마당(중앙부처)"
 ```
 - **적합이 0건인 소스도 실행하세요** — `discord_post.py`가 `**나라장터** — 적합 0건` 헤더와 조건부·부적합 txt 파일을 보냅니다. 판정이 하나도 없는 소스는 알아서 아무것도 보내지 않습니다. 요약 줄 외에 따로 "0건" 알림을 보내지 마세요.
@@ -146,10 +150,11 @@ python seen_state.py mark --out out/g2b --source g2b
 python seen_state.py mark --out out/g2b_pre --source g2b_pre
 python seen_state.py mark --out out/chungbuk
 python seen_state.py mark --out out/chungnam
-python seen_state.py mark --out out/mss --source mss
+python seen_state.py mark --out out/mss
 python seen_state.py mark --out out/bizinfo --source bizinfo
 python seen_state.py mark --out out/bizinfo_other --source bizinfo_other
 python seen_state.py mark --out out/nipa --source nipa
+python seen_state.py mark --out out/msit --source msit
 python seen_state.py mark --out out/bizinfo_central --source bizinfo_central
 python seen_state.py prune --days 120
 python seen_state.py today > state/last_run.txt
