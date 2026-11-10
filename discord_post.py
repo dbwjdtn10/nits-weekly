@@ -202,12 +202,15 @@ def period_line(it: dict) -> str:
     return f"공고 {it.get('announce_date') or '-'} · {span}"
 
 
-def verdict_txt(verdict: str, rs: list[dict], items: dict, title: str, date_from: str, date_to: str) -> str:
-    """조건부·부적합 목록 파일 — 수집 공고일 범위 + 공고마다 공고일·접수 기간 한 줄."""
+def verdict_txt(verdict: str, rs: list[dict], items: dict, title: str, date_from: str, date_to: str,
+                grouped: bool = False) -> str:
+    """조건부·부적합 목록 파일 — 수집 공고일 범위 + 공고마다 공고일·접수 기간 한 줄.
+    grouped: 지역 묶음(충북·충남)처럼 여러 기관이 섞인 소스는 어느 기관 공고인지 붙인다."""
     rl = [f"{verdict} {len(rs)}건 — {title}", f"수집 공고일: {date_from} ~ {date_to}", ""]
     for n, r in enumerate(rs, 1):
         it = items.get(str(r["uid"]), {})
-        rl += [f"{n}. {it.get('title', '?')}", f"   {period_line(it)}", f"   사유: {r.get('reason', '')}"]
+        where = f" · {it['agency']}" if grouped and it.get("agency") else ""
+        rl += [f"{n}. {it.get('title', '?')}", f"   {period_line(it)}{where}", f"   사유: {r.get('reason', '')}"]
         if verdict == "조건부":
             rl += [f"   확인할 것: {'; '.join(r.get('conditions') or [])}", f"   제안 액션: {r.get('action', '')}",
                    f"   금액: {r.get('budget') or it.get('budget') or '-'}"]
@@ -354,7 +357,8 @@ def main() -> int:
             if not rs or (verdict == "부적합" and a.no_rejected):
                 continue
             f = out / f"{verdict}_{date_from}_{date_to}.txt"
-            f.write_text(verdict_txt(verdict, rs, items, a.title, date_from, date_to), "utf-8")
+            grouped = any(it.get("source") != ann.get("source") for it in items.values())   # 묶음은 공고의 source가 사이트 이름
+            f.write_text(verdict_txt(verdict, rs, items, a.title, date_from, date_to, grouped), "utf-8")
             files.append(f)
         # 2000자 단위로 나눠 보내되, 공고 첨부가 있는 카드는 그 카드에서 메시지를 끊어 파일이 카드 바로 아래 붙게 한다
         chunks: list[tuple[str, list[Path]]] = []

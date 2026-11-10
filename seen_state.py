@@ -11,6 +11,7 @@
   # 판정·발송 후: results.json 을 seen.json 에 병합
   python seen_state.py mark --out out --source ntis
   python seen_state.py mark --out out/g2b --source g2b
+  python seen_state.py mark --out out/chungbuk   # 지역 묶음: 공고마다 사이트(cbist·riia·cbtp)별로 나눠 기록
   python seen_state.py prune --days 120        # 오래된 기록 정리
   python seen_state.py today                   # 오늘 날짜(KST) 출력
 """
@@ -90,24 +91,26 @@ def save_seen(data: dict, path: Path = DEFAULT_PATH) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True), "utf-8")
 
 
-def mark(out: Path, source: str, path: Path = DEFAULT_PATH) -> int:
+def mark(out: Path, source: str | None, path: Path = DEFAULT_PATH) -> int:
+    """source를 주지 않으면 공고마다 수집기가 적어 둔 source(사이트)로 나눠 기록한다 — 지역 묶음(out/chungbuk 등)용."""
     ann = json.loads((out / "announcements.json").read_text("utf-8"))
-    titles = {it["uid"]: it.get("title", "") for it in ann["items"]}
     res_path = out / "results.json"
     results = json.loads(res_path.read_text("utf-8")).get("items", []) if res_path.exists() else []
     verdicts = {str(r["uid"]): r.get("verdict", "") for r in results}
     data = load_seen(path)
-    bucket = data.setdefault(source, {})
     today = today_kst().isoformat()
-    n = 0
-    for uid, title in titles.items():
-        if uid in bucket:
+    added: dict[str, int] = {}
+    for it in ann["items"]:
+        src = source or it["source"]
+        bucket = data.setdefault(src, {})
+        if it["uid"] in bucket:
             continue
-        bucket[uid] = {"verdict": verdicts.get(uid, "미판정"), "judged_at": today, "title": title[:80]}
-        n += 1
+        bucket[it["uid"]] = {"verdict": verdicts.get(it["uid"], "미판정"), "judged_at": today, "title": it.get("title", "")[:80]}
+        added[src] = added.get(src, 0) + 1
     save_seen(data, path)
-    print(f"seen.json: {source} +{n}건 (총 {len(bucket)}건)", file=sys.stderr)
-    return n
+    for src in added or ([source] if source else []):
+        print(f"seen.json: {src} +{added.get(src, 0)}건 (총 {len(data.get(src) or {})}건)", file=sys.stderr)
+    return sum(added.values())
 
 
 def prune(days: int, path: Path = DEFAULT_PATH) -> None:
@@ -127,7 +130,8 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     m = sub.add_parser("mark")
     m.add_argument("--out", required=True)
-    m.add_argument("--source", required=True, choices=["ntis", "g2b", "g2b_pre", "cbist", "riia", "mss", "bizinfo", "bizinfo_other", "bizinfo_central", "nipa"])
+    m.add_argument("--source", choices=["ntis", "g2b", "g2b_pre", "cbist", "riia", "mss", "bizinfo", "bizinfo_other", "bizinfo_central", "nipa"],
+                   help="생략하면 공고별 source(사이트)로 나눠 기록 — 지역 묶음(out/chungbuk, out/chungnam)에 사용")
     m.add_argument("--state", default=str(DEFAULT_PATH))
     p = sub.add_parser("prune")
     p.add_argument("--days", type=int, default=120)

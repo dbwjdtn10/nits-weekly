@@ -6,7 +6,18 @@
   bizinfo_other : 기업마당 — 충북·충남 외 14개 시·도, 접수중. bizinfo_keywords.txt로 공고명 1차 필터
   bizinfo_central : 기업마당 — 소관이 중앙부처인 공고(KOCCA·NIPA 등 국비 사업, 중기부 제외), 접수중. bizinfo_keywords.txt로 1차 필터
   mss     : 기업마당 — 소관이 중소벤처기업부인 공고 (같은 API)
+  nipa    : 정보통신산업진흥원 사업공고  https://www.nipa.kr/home/2-2
+  cbist   : 충북과학기술혁신원 사업공고  https://www.cbist.or.kr/home/sub.do?mncd=1131
   riia    : 충북 지역혁신클러스터 사업공고  https://cb.riia.or.kr/board/businessAnnouncement
+  cbtp    : 충북테크노파크 사업공고  https://www.cbtp.or.kr (board_id=saup_notice)
+  ctp     : 충남테크노파크 사업공고·입찰공고  https://www.ctp.or.kr
+  cistep  : 천안과학산업진흥원 공지사항·입찰공고  https://www.cistep.re.kr
+  cfac    : 천안문화재단 모집공고·입찰공고  https://www.cfac.or.kr
+  ccon    : 충남콘텐츠진흥원(옛 충남정보문화산업진흥원) 사업공고·입찰공고  https://ccon.kr
+
+지역 묶음(--group): 여러 사이트를 한 폴더에 모아 Discord에 지역 하나로 나가게 한다.
+  chungbuk : cbist + riia + cbtp      chungnam : ctp + cistep + cfac + ccon
+  묶음 안에서 한 사이트가 실패해도 나머지는 수집하고, 실패한 사이트는 announcements.json의 failed에 적는다.
 
 지정 기간(기본: 지난주 월~일)에 등록된 공고의 상세 본문과 첨부를 내려받아
 NTIS 수집기와 같은 형식(announcements.json / digest.md / brief/ / text/)으로 저장한다.
@@ -15,8 +26,8 @@ NTIS 수집기와 같은 형식(announcements.json / digest.md / brief/ / text/)
 (기업마당은 충북과기혁신원·중기부 공고를 재게시하므로).
 
 사용:
-  python boards_collect.py --site mss --out out/mss --dedupe out
-  python boards_collect.py --site bizinfo --out out/bizinfo --dedupe out out/cbist out/riia out/mss
+  python boards_collect.py --group chungbuk --out out/chungbuk --dedupe out out/g2b
+  python boards_collect.py --site mss --out out/mss --dedupe out out/chungbuk out/chungnam
   python boards_collect.py --site riia --from 2026-09-21 --to 2026-09-27 --out out/riia
 """
 from __future__ import annotations
@@ -26,20 +37,52 @@ import html
 import json
 import os
 import re
+import ssl
 import sys
 import time
 import urllib.parse
 from pathlib import Path
 
+from requests.adapters import HTTPAdapter
+
+import cbist_collect
 from cbist_collect import download_attachment
 from g2b_collect import load_keywords, match_keywords
 from ntis_collect import (
     attachment_log, attachment_sections, clean_ws, dday, default_range, extract_attachment, get, log, make_brief,
-    now_kst, strip_tags,
+    now_kst, session, strip_tags,
 )
 from seen_state import load_seen, same_title, title_key
 
 UA_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"}
+IMAGE_ONLY = "(본문이 이미지로만 게시됨 — 첨부 공고문 참조)"
+# 선정·평가·입찰 결과 공고는 신청할 수 있는 공고가 아니므로 판정에 넘기지 않는다 (새로 추가한 기관 게시판에만 적용)
+RESULT_TITLE = re.compile(r"^\s*\[결과\]|결과\s*(공고|안내|발표|알림)|(선정|평가|심의|심사|입찰|개찰)\s*결과|합격자\s*(발표|공고)")
+
+
+class LegacyTLS(HTTPAdapter):
+    """충북TP 서버는 TLS 설정이 오래돼 기본 보안 수준에서는 연결이 거부된다 (www는 DH_KEY_TOO_SMALL, 센터 서브도메인은
+    WRONG_SIGNATURE_TYPE) — cbtp.or.kr 호스트에만 수준을 낮춘다. 인증서 검증은 그대로 한다."""
+
+    def init_poolmanager(self, *args, **kw):
+        ctx = ssl.create_default_context()
+        ctx.set_ciphers("DEFAULT:@SECLEVEL=0")
+        kw["ssl_context"] = ctx
+        return super().init_poolmanager(*args, **kw)
+
+
+session.mount("https://www.cbtp.or.kr", LegacyTLS())
+
+
+def body_text(fragment: str) -> str:
+    t = strip_tags(fragment or "")
+    return t if t or "<img" not in (fragment or "") else IMAGE_ONLY
+
+
+def cut(seg: str, stops: tuple[str, ...]) -> str:
+    """seg에서 가장 먼저 나오는 stop 앞까지."""
+    idx = [i for i in (seg.find(s) for s in stops) if i >= 0]
+    return seg[: min(idx)] if idx else seg
 
 
 def dash_date(s: str) -> str:
@@ -219,13 +262,236 @@ class Nipa:
         return {"ntis_url": url, "source_url": "", "body": body, "attachments": atts, "contact": ""}
 
 
-SITES = {s.key: s for s in (Bizinfo, BizinfoOther, BizinfoCentral, Mss, Riia, Nipa)}
+# --------------------------------------------------------------------------- 충북과학기술혁신원
+class Cbist:
+    """cbist_collect.py의 목록·상세 파서를 그대로 쓴다 (충북 묶음에 넣기 위한 어댑터)."""
+    key, label = "cbist", "충북과학기술혁신원"
+    KEYWORDS = ""
+
+    def list_page(self, page: int) -> list[dict]:
+        rows = cbist_collect.parse_rows(get(cbist_collect.LIST_URL, params={"mncd": cbist_collect.MNCD, "page": page}).text)
+        for r in rows:
+            r.update(period_text=f"{r['start']} ~ {r['end']}" if r["start"] else "", dept="충청북도", agency=self.label,
+                     form="지원사업 공고")
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        d = cbist_collect.fetch_detail(row)
+        return {k: d[k] for k in ("ntis_url", "source_url", "body", "attachments", "contact")}
+
+
+# --------------------------------------------------------------------------- 충북테크노파크
+class Cbtp:
+    """사업공고 게시판. 목록에 등록일이 없고(접수기간·진행 상태만) 공지 글이 매 페이지 위에 고정된다."""
+    key, label = "cbtp", "충북테크노파크"
+    KEYWORDS = ""
+    SKIP_TITLE = RESULT_TITLE
+    NO_LIST_DATE = True
+    PAGES = 1
+    BASE = "https://www.cbtp.or.kr"
+    BOARD = {"control": "bbs", "board_id": "saup_notice", "lm_uid": "387"}
+
+    def _html(self, params: dict) -> str:
+        r = get(f"{self.BASE}/index.php", params=params, headers=UA_HEADERS)
+        r.encoding = "cp949"
+        return r.text
+
+    def list_page(self, page: int) -> list[dict]:
+        h = self._html({**self.BOARD, "page": page})
+        rows = []
+        for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", h[h.find('class="bbs_default_list"'):], re.S):
+            m = re.search(r'<a href="[^"]*mode=view&amp;no=([A-Za-z0-9_]+)[^"]*">(.*?)</a>', tr, re.S)
+            if not m:
+                continue
+            tds = re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)
+            start, end = period(strip_tags(tds[-1])) if tds else ("", "")
+            rows.append({"uid": f"cbtp-{m[1]}", "title": clean_ws(strip_tags(m[2])), "reg_date": "", "start": start, "end": end,
+                         "status": "종료" if "alt='완료'" in tr else "", "period_text": f"{start} ~ {end}" if start else "",
+                         "dept": "충청북도", "agency": self.label, "form": "사업공고",
+                         "program": clean_ws(strip_tags(tds[4])) if len(tds) > 5 else ""})
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        no = row["uid"].split("-", 1)[1]
+        h = self._html({**self.BOARD, "mode": "view", "no": no})
+        view = h[h.find('class="bbs_view"'):]
+        reg = re.search(r"등록일</span></th>\s*<td>(\d{4}-\d{2}-\d{2})", view)   # 주석 처리돼 있지만 HTML에는 남아 있다
+        box = re.search(r'<td class="substance"[^>]*>(.*?)</td>\s*</tr>\s*</tbody>', view, re.S)
+        frag = re.sub(r'<div class="blind">.*?</div>', "", box[1], flags=re.S) if box else ""
+        atts = []
+        lst = re.search(r'<ul class="attach[^"]*">(.*?)</ul>', view, re.S)
+        for href, n in re.findall(r'<a href="([^"]+)">(.*?)</a>', lst[1] if lst else "", re.S):
+            href = html.unescape(href)
+            if href.startswith("http"):   # 센터 게시판(no=contact_…) 글은 첨부가 센터 서브도메인(semicon.cbtp.or.kr 등)에 있다
+                host = urllib.parse.urlsplit(href).netloc
+                if host.endswith(".cbtp.or.kr"):
+                    session.mount(f"https://{host}", LegacyTLS())
+            else:                         # 본 게시판 첨부 주소의 file 값은 EUC-KR로 인코딩해야 서버가 찾는다
+                pre, _, fname = href.partition("&file=")
+                href = f"{self.BASE}{pre}&file={urllib.parse.quote(fname, encoding='cp949')}"
+            atts.append({"name": re.sub(r"^\d+_", "", clean_ws(strip_tags(n))), "url": href})
+        url = f"{self.BASE}/index.php?control=bbs&board_id=saup_notice&mode=view&no={no}&lm_uid=387"
+        return {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": atts, "contact": "",
+                "reg_date": reg[1] if reg else row["start"]}
+
+
+# --------------------------------------------------------------------------- 충남테크노파크
+class Ctp:
+    key, label = "ctp", "충남테크노파크"
+    KEYWORDS = ""
+    SKIP_TITLE = RESULT_TITLE
+    BASE = "https://www.ctp.or.kr"
+    BOARDS = (("business/data.do", "사업공고"), ("community/bid.do", "입찰공고"))
+
+    def list_page(self, page: int) -> list[dict]:
+        rows = []
+        for path, form in self.BOARDS:
+            h = get(f"{self.BASE}/{path}", params={"pn": page}, headers=UA_HEADERS).text
+            for tr in h[h.find("<tbody"):].split("<tr>")[1:]:
+                m = re.search(r"<a\s+href='(\w+detail\.do)\?seq=(\d+)'>(.*?)</a>", tr, re.S)
+                if not m:
+                    continue
+                dl = re.search(r"<span class='cod1[^']*'>(.*?)</span>", tr, re.S)   # 접수 마감 일시 (입찰공고는 비어 있다)
+                reg = re.findall(r"<td class='d-none d-lg-table-cell'>(\d{4}-\d{2}-\d{2})</td>", tr)
+                end = dash_date(dl[1]) if dl else ""
+                rows.append({"uid": f"ctp-{m[2]}", "title": clean_ws(strip_tags(m[3])), "reg_date": reg[-1] if reg else "",
+                             "start": "", "end": end, "status": "종료" if "list-end" in tr else "",
+                             "period_text": f"~ {clean_ws(dl[1])}" if end else "", "dept": "충청남도", "agency": self.label,
+                             "form": form, "board": f"{path.rsplit('/', 1)[0]}/{m[1]}"})
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        url = f"{self.BASE}/{row['board']}?seq={row['uid'].split('-', 1)[1]}"
+        h = get(url, headers=UA_HEADERS).text
+        i = h.find('<div class="boardContent">')
+        frag = cut(h[i:], ('<div class="boardAttach">', '<div class="text-center">')) if i >= 0 else ""
+        atts = [{"name": clean_ws(strip_tags(n)), "url": self.BASE + html.unescape(href)}
+                for href, n in re.findall(r"<a class='d-block co66' href='(/boardfiledownload\.do\?seq=\d+)'>(.*?)</a>", h, re.S)]
+        return {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": atts, "contact": ""}
+
+
+# --------------------------------------------------------------------------- 천안과학산업진흥원
+class Cistep:
+    """지원사업 모집공고는 공지사항 게시판에 올라온다 ('지원사업 신청' 메뉴는 2025-05 이후 갱신이 없다)."""
+    key, label = "cistep", "천안과학산업진흥원"
+    KEYWORDS = ""
+    SKIP_TITLE = RESULT_TITLE
+    BASE = "https://www.cistep.re.kr"
+    BOARDS = (("notice", "공지사항"), ("bidding", "입찰공고"))
+
+    def list_page(self, page: int) -> list[dict]:
+        rows = []
+        for code, form in self.BOARDS:
+            h = get(f"{self.BASE}/zboard/list.do", params={"lmCode": code, "pageIndex": page}, headers=UA_HEADERS).text
+            for tr in re.findall(r"<tr>(.*?)</tr>", h, re.S):
+                m = re.search(r'<a href="/zboard/read\.do\?[^"]*pd_pkid=(\d+)"[^>]*>(.*?)</a>', tr, re.S)
+                reg = re.search(r'class="date">\s*(\d{4}-\d{2}-\d{2})', tr)
+                if not m:
+                    continue
+                rows.append({"uid": f"cistep-{m[1]}", "title": clean_ws(strip_tags(m[2])), "reg_date": reg[1] if reg else "",
+                             "start": "", "end": "", "status": "", "period_text": "", "dept": "충청남도", "agency": self.label,
+                             "form": form, "board": code})
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        url = f"{self.BASE}/zboard/read.do?lmCode={row['board']}&pd_pkid={row['uid'].split('-', 1)[1]}"
+        h = get(url, headers=UA_HEADERS).text
+        box = re.search(r'<td[^>]*class="bbs_detail"[^>]*>(.*?)</td>\s*</tr>\s*</tbody>', h, re.S)
+        atts = [{"name": clean_ws(n), "url": self.BASE + html.unescape(href)}
+                for href, n in re.findall(r'<a href="(/zboard/printFileDown\.do\?[^"]+)" title="(.*?) 다운로드"', h, re.S)]
+        return {"ntis_url": url, "source_url": "", "body": body_text(box[1] if box else ""), "attachments": atts, "contact": ""}
+
+
+# --------------------------------------------------------------------------- 그누보드 게시판 (천안문화재단·충남콘텐츠진흥원)
+class Gnuboard:
+    """상세·첨부 구조가 같은 그누보드 사이트 공통. 첨부는 같은 세션으로 글을 먼저 열어야 받을 수 있다(수집 순서가 그렇다)."""
+    KEYWORDS = ""
+    SKIP_TITLE = RESULT_TITLE
+    BASE = ""
+    BOARDS: tuple[tuple[str, str], ...] = ()
+    DEPT = "충청남도"
+
+    def board_html(self, board: str, page: int) -> str:
+        return get(f"{self.BASE}/bbs/board.php", params={"bo_table": board, "page": page}, headers=UA_HEADERS).text
+
+    def row(self, board: str, form: str, wr_id: str, title: str, **kw) -> dict:
+        title = re.sub(r"\s*N?\s*새글\s*$", "", clean_ws(strip_tags(title)))   # 새 글 아이콘의 대체 글자
+        return {"uid": f"{self.key}-{board}-{wr_id}", "title": title, "reg_date": "", "start": "", "end": "",
+                "status": "", "period_text": "", "dept": self.DEPT, "agency": self.label, "form": form, **kw}
+
+    def detail(self, row: dict) -> dict:
+        _, board, wr_id = row["uid"].split("-")
+        url = f"{self.BASE}/bbs/board.php?bo_table={board}&wr_id={wr_id}"
+        h = get(url, headers=UA_HEADERS).text
+        title = re.search(r'<span class="bo_v_tit">(.*?)</span>', h, re.S)   # 목록 제목은 길면 …로 잘린다
+        reg = re.search(r"작성일</span>.{0,120}?(\d{2,4})-(\d{2})-(\d{2})", h, re.S)
+        i = h.find('<div id="bo_v_con">')
+        frag = cut(h[i:], ("<!-- } 본문 내용 끝", '<section id="bo_v_file"', 'id="bo_v_share"', 'id="bo_v_act"', "</section>")) if i >= 0 else ""
+        atts = [{"name": clean_ws(strip_tags(n)), "url": html.unescape(href)}
+                for href, n in re.findall(r'<a href="([^"]*download\.php\?[^"]+)" class="view_file_download"[^>]*>.*?<strong>(.*?)</strong>', h, re.S)]
+        d = {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": atts, "contact": ""}
+        if title:
+            d["title"] = clean_ws(strip_tags(title[1]))
+        if reg:
+            d["reg_date"] = f"{int(reg[1]) % 100 + 2000}-{reg[2]}-{reg[3]}"
+        return d
+
+
+class Cfac(Gnuboard):
+    """목록에 작성일이 없고 공고기간·마감 표시만 있다."""
+    key, label = "cfac", "천안문화재단"
+    BASE = "https://www.cfac.or.kr"
+    BOARDS = (("biz", "모집공고"), ("contest", "입찰공고"))
+    NO_LIST_DATE = True
+    PAGES = 1
+
+    def list_page(self, page: int) -> list[dict]:
+        rows = []
+        for board, form in self.BOARDS:
+            for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", self.board_html(board, page), re.S):
+                m = re.search(r'<div class="bo_tit">\s*<a href="[^"]*wr_id=(\d+)[^"]*">(.*?)</a>', tr, re.S)
+                if not m:
+                    continue
+                per = re.search(r"\d{4}-\d{2}-\d{2}\s*~\s*\d{4}-\d{2}-\d{2}", tr)
+                step = re.search(r'class="btn_step\d*">([^<]*)', tr)
+                start, end = period(per[0] if per else "")
+                rows.append(self.row(board, form, m[1], m[2], start=start, end=end, period_text=per[0] if per else "",
+                                     status="종료" if step and "마감" in step[1] else ""))
+        return rows
+
+
+class Ccon(Gnuboard):
+    """충남콘텐츠진흥원 (옛 충남정보문화산업진흥원). 사업공고 글머리: 진행중 / 결과 / 종료."""
+    key, label = "ccon", "충남콘텐츠진흥원"
+    BASE = "https://ccon.kr"
+    BOARDS = (("bsnt", "사업공고"), ("bnt", "입찰공고"))
+
+    def list_page(self, page: int) -> list[dict]:
+        rows = []
+        for board, form in self.BOARDS:
+            h = self.board_html(board, page)
+            for li in h[h.find('id="bo_list"'):].split("<li")[1:]:
+                m = re.search(r'<a href="[^"]*wr_id=(\d+)[^"]*" class="bo_subject">(.*?)</a>', li, re.S)
+                if not m:
+                    continue
+                cate = re.search(r'class="bo_cate_link">([^<]+)', li)
+                reg = re.search(r'class="bo_date">.*?(\d{4}-\d{2}-\d{2})', li, re.S)
+                today = re.search(r'class="bo_date">.*?\d{1,2}:\d{2}', li, re.S)   # 오늘 올라온 글은 시각만 나올 수 있다
+                rows.append(self.row(board, form, m[1], m[2], reg_date=reg[1] if reg else now_kst().date().isoformat() if today else "",
+                                     status="종료" if cate and cate[1].strip() in ("결과", "종료") else ""))
+        return rows
+
+
+SITES = {s.key: s for s in (Bizinfo, BizinfoOther, BizinfoCentral, Mss, Riia, Nipa, Cbist, Cbtp, Ctp, Cistep, Cfac, Ccon)}
+# 지역 묶음: Discord에 지역 이름 하나로 나간다. 판정 기록(seen.json)은 사이트별로 남는다
+GROUPS = {"chungbuk": ("충북", (Cbist, Riia, Cbtp)), "chungnam": ("충남", (Ctp, Cistep, Cfac, Ccon))}
 
 
 # --------------------------------------------------------------------------- 공통
 def fetch_list(site, date_from: str, date_to: str, max_pages: int = 30) -> list[dict]:
     out: list[dict] = []
-    for page in range(1, max_pages + 1):
+    no_date = getattr(site, "NO_LIST_DATE", False)
+    for page in range(1, min(max_pages, getattr(site, "PAGES", max_pages)) + 1):
         rows = site.list_page(page)
         log(f"목록 {page}페이지: {len(rows)}건")
         if not rows:
@@ -242,7 +508,11 @@ def fetch_list(site, date_from: str, date_to: str, max_pages: int = 30) -> list[
             continue
         seen.add(r["uid"])
         # 기업마당 계열은 API 한 목록을 소관기관으로 나눠 쓴다
-        if r["reg_date"] and date_from <= r["reg_date"] <= date_to and getattr(site, "in_scope", lambda _: True)(r):
+        if not getattr(site, "in_scope", lambda _: True)(r):
+            continue
+        # 목록에 등록일이 없는 사이트(NO_LIST_DATE)는 기간 대신 "접수 중이고 아직 판정하지 않은 공고"를 모두 받는다
+        # (등록일은 상세에서 채운다). 처음 추가한 날에만 접수 중인 공고가 한꺼번에 들어온다.
+        if (r["status"] != "종료") if no_date else (r["reg_date"] and date_from <= r["reg_date"] <= date_to):
             uniq.append(r)
     return uniq
 
@@ -265,13 +535,16 @@ def duplicate_of(title: str, known: list[tuple[tuple[frozenset, str], str]]) -> 
     return next((src for k, src in known if same_title(key, k)), "")
 
 
-def write_outputs(site, items: list[dict], out: Path, date_from: str, date_to: str) -> None:
+def write_outputs(key: str, label: str, items: list[dict], out: Path, date_from: str, date_to: str,
+                  failed: list[str] | None = None) -> None:
     (out / "brief").mkdir(parents=True, exist_ok=True)
     (out / "text").mkdir(parents=True, exist_ok=True)
     (out / "announcements.json").write_text(
-        json.dumps({"range": [date_from, date_to], "source": site.key, "collected_at": now_kst().isoformat(), "items": items},
-                   ensure_ascii=False, indent=1), "utf-8")
-    lines = [f"# {site.label} 사업공고 수집 결과 ({date_from} ~ {date_to})", "", f"총 {len(items)}건", ""]
+        json.dumps({"range": [date_from, date_to], "source": key, "collected_at": now_kst().isoformat(),
+                    "failed": failed or [], "items": items}, ensure_ascii=False, indent=1), "utf-8")
+    lines = [f"# {label} 사업공고 수집 결과 ({date_from} ~ {date_to})", "", f"총 {len(items)}건", ""]
+    if failed:
+        lines += [f"⚠ 수집 실패: {', '.join(failed)}", ""]
     for it in items:
         lines += [f"## [{it['uid']}] {it['title']}",
                   f"- {it['agency']} | 등록 {it['reg_date']} | 접수 {it['period_text'] or '-'} ({it['dday'] or '마감 미정'})",
@@ -280,7 +553,7 @@ def write_outputs(site, items: list[dict], out: Path, date_from: str, date_to: s
                   f"- 요약본: brief/{it['uid']}.md", ""]
     (out / "digest.md").write_text("\n".join(lines), "utf-8")
     for it in items:
-        head = [f"# {it['title']}", "", f"- UID: {it['uid']} ({site.label})",
+        head = [f"# {it['title']}", "", f"- UID: {it['uid']} ({it.get('site_label') or label})",
                 f"- 소관 {it['dept']} | 수행기관 {it['agency']} | 분야 {it.get('form', '')}",
                 f"- 등록 {it['reg_date']} | 접수 {it['period_text'] or '-'}",
                 f"- 상세: {it['ntis_url']}"] + ([f"- 신청 사이트: {it['source_url']}"] if it.get("source_url") else []) + [""]
@@ -291,26 +564,9 @@ def write_outputs(site, items: list[dict], out: Path, date_from: str, date_to: s
         (out / "brief" / f"{it['uid']}.md").write_text("\n".join(bparts), "utf-8")
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--site", required=True, choices=sorted(SITES))
-    ap.add_argument("--from", dest="date_from")
-    ap.add_argument("--to", dest="date_to")
-    ap.add_argument("--days", type=int)
-    ap.add_argument("--out")
-    ap.add_argument("--dedupe", nargs="*", default=[], help="중복 확인할 다른 소스 산출물 폴더 (announcements.json)")
-    ap.add_argument("--no-attach", action="store_true")
-    ap.add_argument("--no-seen", action="store_true")
-    ap.add_argument("--include-closed", action="store_true")
-    ap.add_argument("--no-filter", action="store_true", help="키워드 1차 필터 끄기 (bizinfo_other)")
-    a = ap.parse_args()
-
-    site = SITES[a.site]()
-    date_from, date_to = (a.date_from, a.date_to) if a.date_from and a.date_to else default_range(a.days)
-    out = Path(a.out or f"out/{site.key}")
-    out.mkdir(parents=True, exist_ok=True)
+def collect(site, a, out: Path, date_from: str, date_to: str, known: list) -> list[dict]:
+    """한 사이트의 목록 → 제외(이미 판정·마감·결과 공고·중복·키워드) → 상세·첨부. 묶음에서는 사이트마다 한 번씩 부른다."""
     log(f"[{site.label}] 수집 기간: {date_from} ~ {date_to} -> {out.resolve()}")
-
     rows = fetch_list(site, date_from, date_to)
     log(f"기간 내 등록 {len(rows)}건")
     if not a.no_seen:
@@ -322,8 +578,12 @@ def main() -> int:
         before = len(rows)
         rows = [r for r in rows if r["status"] != "종료" and not dday(r["end"]).startswith("마감")]
         log(f"마감/종료 공고 제외: {before - len(rows)}건")
+    skip = getattr(site, "SKIP_TITLE", None)
+    if skip:
+        before = len(rows)
+        rows = [r for r in rows if not skip.search(r["title"])]
+        log(f"결과 공고 제외: {before - len(rows)}건")
     if not a.no_seen:
-        known = known_titles(a.dedupe)
         kept = []
         for r in rows:
             dup = duplicate_of(r["title"], known)
@@ -350,10 +610,11 @@ def main() -> int:
     for i, r in enumerate(rows, 1):
         log(f"[{i}/{len(rows)}] {r['uid']} {r['title'][:50]}")
         try:
-            d = {**r, "source": site.key, "budget": "", "announce_date": r["reg_date"], "meta": {}, **site.detail(r)}
+            d = {**r, "source": site.key, "site_label": site.label, "budget": "", "meta": {}, **site.detail(r)}
         except Exception as e:  # noqa: BLE001
             log(f"  ! 상세 실패: {e}")
             continue
+        d["announce_date"] = d["reg_date"]   # 목록에 등록일이 없는 사이트는 상세에서 채운다
         d["dday"] = dday(d["end"])
         if not a.no_attach:
             for att in d["attachments"]:
@@ -370,8 +631,46 @@ def main() -> int:
                 time.sleep(0.3)
         items.append(d)
         time.sleep(0.5)
-    write_outputs(site, items, out, date_from, date_to)
-    log(f"완료: {len(items)}건 -> {out / 'digest.md'}")
+    return items
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    which = ap.add_mutually_exclusive_group(required=True)
+    which.add_argument("--site", choices=sorted(SITES))
+    which.add_argument("--group", choices=sorted(GROUPS), help="지역 묶음 — 여러 사이트를 한 폴더로")
+    ap.add_argument("--from", dest="date_from")
+    ap.add_argument("--to", dest="date_to")
+    ap.add_argument("--days", type=int)
+    ap.add_argument("--out")
+    ap.add_argument("--dedupe", nargs="*", default=[], help="중복 확인할 다른 소스 산출물 폴더 (announcements.json)")
+    ap.add_argument("--no-attach", action="store_true")
+    ap.add_argument("--no-seen", action="store_true")
+    ap.add_argument("--include-closed", action="store_true")
+    ap.add_argument("--no-filter", action="store_true", help="키워드 1차 필터 끄기 (bizinfo_other)")
+    a = ap.parse_args()
+
+    key, label, classes = (a.group, *GROUPS[a.group]) if a.group else (a.site, SITES[a.site].label, (SITES[a.site],))
+    date_from, date_to = (a.date_from, a.date_to) if a.date_from and a.date_to else default_range(a.days)
+    out = Path(a.out or f"out/{key}")
+    out.mkdir(parents=True, exist_ok=True)
+
+    known = [] if a.no_seen else known_titles(a.dedupe)
+    items, failed = [], []
+    for cls in classes:
+        try:
+            got = collect(cls(), a, out, date_from, date_to, known)
+        except Exception as e:  # noqa: BLE001
+            if not a.group:   # 단일 사이트는 예전처럼 실패로 끝낸다 (announcements.json이 없으면 요약에 "수집 실패")
+                raise
+            log(f"! [{cls.label}] 수집 실패 — 묶음의 나머지 사이트는 계속: {e}")
+            failed.append(cls.label)
+            continue
+        items += got
+        # 같은 묶음의 뒤 사이트가 같은 공고를 다시 올린 경우(예: 충남TP 공고를 천안과학산업진흥원이 재게시)를 거른다
+        known += [(k, f"{cls.key} {it['uid']}") for it in got if len((k := title_key(it["title"]))[1]) >= 8]
+    write_outputs(key, label, items, out, date_from, date_to, failed)
+    log(f"완료: {len(items)}건 -> {out / 'digest.md'}" + (f" (수집 실패: {', '.join(failed)})" if failed else ""))
     return 0
 
 

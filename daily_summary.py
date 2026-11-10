@@ -6,9 +6,10 @@
 
 인자: 표시이름=산출물폴더 (announcements.json / results.json 이 있는 폴더). 수집 0건인 소스는 줄에서 뺀다.
 폴더에 announcements.json이 없으면 "수집 실패", 수집은 됐는데 results.json이 없으면 "미판정"으로 붙인다.
+지역 묶음(충북·충남)에서 일부 사이트만 실패했으면 "충북 중 충북테크노파크 수집 실패"처럼 사이트 이름을 붙인다.
 
 사용:
-  python daily_summary.py NTIS=out 나라장터=out/g2b 충북과기원=out/cbist 지역혁신클러스터=out/riia \\
+  python daily_summary.py NTIS=out 나라장터=out/g2b 충북=out/chungbuk 충남=out/chungnam \\
       중기부=out/mss "기업마당(충북·충남)=out/bizinfo" "기업마당(타지역)=out/bizinfo_other"
   python daily_summary.py ... --dry-run
 """
@@ -38,7 +39,10 @@ def main() -> int:
         if not ann_p.exists():
             problems.append(f"{label} 수집 실패")
             continue
-        ann = {it["uid"]: it for it in json.loads(ann_p.read_text("utf-8")).get("items", [])}
+        data = json.loads(ann_p.read_text("utf-8"))
+        if data.get("failed"):   # 지역 묶음에서 일부 사이트만 실패한 경우
+            problems.append(f"{label} 중 {'·'.join(data['failed'])} 수집 실패")
+        ann = {it["uid"]: it for it in data.get("items", [])}
         if not ann:
             continue
         parts.append(f"{label} {len(ann)}")
