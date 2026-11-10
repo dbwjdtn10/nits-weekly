@@ -49,8 +49,8 @@ import cbist_collect
 from cbist_collect import download_attachment
 from g2b_collect import load_keywords, match_keywords
 from ntis_collect import (
-    attachment_log, attachment_sections, clean_ws, dday, default_range, extract_attachment, get, log, make_brief,
-    now_kst, session, strip_tags,
+    attachment_log, attachment_sections, clean_ws, dday, default_range, extract_attachment, get, is_form_attachment, log,
+    make_brief, now_kst, session, strip_tags,
 )
 from seen_state import load_seen, same_title, title_key
 
@@ -77,6 +77,33 @@ session.mount("https://www.cbtp.or.kr", LegacyTLS())
 def body_text(fragment: str) -> str:
     t = strip_tags(fragment or "")
     return t if t or "<img" not in (fragment or "") else IMAGE_ONLY
+
+
+def body_images(fragment: str, base: str) -> list[str]:
+    """본문 조각 안의 이미지 주소(절대 경로, 최대 6장). 공고문이 이미지로만 올라온 글에서 판정용으로 내려받는다."""
+    srcs = re.findall(r"""<img[^>]+src=["']([^"']+)""", fragment or "")
+    return [urllib.parse.urljoin(base + "/", html.unescape(u)) for u in srcs][:6]
+
+
+def save_images(urls: list[str], dest: Path) -> list[str]:
+    """이미지를 dest에 01.jpg, 02.png … 로 저장하고 경로 목록을 돌려준다 (판정 때 Read 도구로 연다)."""
+    saved = []
+    for n, url in enumerate(urls, 1):
+        try:
+            r = session.get(url, headers=UA_HEADERS, timeout=60)
+            r.raise_for_status()
+            # Content-Type이 image/jpg처럼 제각각이라 파일 머리로 형식을 본다
+            ext = next((e for sig, e in ((b"\xff\xd8\xff", ".jpg"), (b"\x89PNG", ".png"), (b"GIF8", ".gif"))
+                        if r.content.startswith(sig)), ".webp" if r.content[8:12] == b"WEBP" else "")
+            if not ext or len(r.content) > 8 * 1024 * 1024:
+                continue
+            dest.mkdir(parents=True, exist_ok=True)
+            path = dest / f"{n:02d}{ext}"
+            path.write_bytes(r.content)
+            saved.append(path.as_posix())
+        except Exception as e:  # noqa: BLE001
+            log(f"  ! 본문 이미지 실패 {url[:80]}: {e}")
+    return saved
 
 
 def cut(seg: str, stops: tuple[str, ...]) -> str:
@@ -317,7 +344,12 @@ class Cbtp:
         view = h[h.find('class="bbs_view"'):]
         reg = re.search(r"등록일</span></th>\s*<td>(\d{4}-\d{2}-\d{2})", view)   # 주석 처리돼 있지만 HTML에는 남아 있다
         box = re.search(r'<td class="substance"[^>]*>(.*?)</td>\s*</tr>\s*</tbody>', view, re.S)
-        frag = re.sub(r'<div class="blind">.*?</div>', "", box[1], flags=re.S) if box else ""
+        frag = re.sub(r'<!--.*?-->|<div class="btn_saup_go">.*?</div>', "", box[1], flags=re.S) if box else ""
+        # 본문은 대개 이미지 한 장이고, 같은 내용이 화면낭독기용 숨은 글(div.blind)로 들어 있다. 제목이나 "없음"뿐이면 버린다
+        blind = re.search(r'<div class="blind">(.*?)</div>', frag, re.S)
+        hidden = strip_tags(blind[1]) if blind else ""
+        if blind and (len(hidden) < 40 or clean_ws(hidden) == row["title"]):
+            frag = frag.replace(blind[0], "")
         atts = []
         lst = re.search(r'<ul class="attach[^"]*">(.*?)</ul>', view, re.S)
         for href, n in re.findall(r'<a href="([^"]+)">(.*?)</a>', lst[1] if lst else "", re.S):
@@ -332,7 +364,7 @@ class Cbtp:
             atts.append({"name": re.sub(r"^\d+_", "", clean_ws(strip_tags(n))), "url": href})
         url = f"{self.BASE}/index.php?control=bbs&board_id=saup_notice&mode=view&no={no}&lm_uid=387"
         return {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": atts, "contact": "",
-                "reg_date": reg[1] if reg else row["start"]}
+                "body_images": body_images(frag, self.BASE), "reg_date": reg[1] if reg else row["start"]}
 
 
 # --------------------------------------------------------------------------- 충남테크노파크
@@ -367,7 +399,8 @@ class Ctp:
         frag = cut(h[i:], ('<div class="boardAttach">', '<div class="text-center">')) if i >= 0 else ""
         atts = [{"name": clean_ws(strip_tags(n)), "url": self.BASE + html.unescape(href)}
                 for href, n in re.findall(r"<a class='d-block co66' href='(/boardfiledownload\.do\?seq=\d+)'>(.*?)</a>", h, re.S)]
-        return {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": atts, "contact": ""}
+        return {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": atts, "contact": "",
+                "body_images": body_images(frag, self.BASE)}
 
 
 # --------------------------------------------------------------------------- 천안과학산업진흥원
@@ -399,7 +432,9 @@ class Cistep:
         box = re.search(r'<td[^>]*class="bbs_detail"[^>]*>(.*?)</td>\s*</tr>\s*</tbody>', h, re.S)
         atts = [{"name": clean_ws(n), "url": self.BASE + html.unescape(href)}
                 for href, n in re.findall(r'<a href="(/zboard/printFileDown\.do\?[^"]+)" title="(.*?) 다운로드"', h, re.S)]
-        return {"ntis_url": url, "source_url": "", "body": body_text(box[1] if box else ""), "attachments": atts, "contact": ""}
+        frag = box[1] if box else ""
+        return {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": atts, "contact": "",
+                "body_images": body_images(frag, self.BASE)}
 
 
 # --------------------------------------------------------------------------- 그누보드 게시판 (천안문화재단·충남콘텐츠진흥원)
@@ -429,7 +464,8 @@ class Gnuboard:
         frag = cut(h[i:], ("<!-- } 본문 내용 끝", '<section id="bo_v_file"', 'id="bo_v_share"', 'id="bo_v_act"', "</section>")) if i >= 0 else ""
         atts = [{"name": clean_ws(strip_tags(n)), "url": html.unescape(href)}
                 for href, n in re.findall(r'<a href="([^"]*download\.php\?[^"]+)" class="view_file_download"[^>]*>.*?<strong>(.*?)</strong>', h, re.S)]
-        d = {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": atts, "contact": ""}
+        d = {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": atts, "contact": "",
+             "body_images": body_images(frag, self.BASE)}
         if title:
             d["title"] = clean_ws(strip_tags(title[1]))
         if reg:
@@ -558,9 +594,11 @@ def write_outputs(key: str, label: str, items: list[dict], out: Path, date_from:
                 f"- 등록 {it['reg_date']} | 접수 {it['period_text'] or '-'}",
                 f"- 상세: {it['ntis_url']}"] + ([f"- 신청 사이트: {it['source_url']}"] if it.get("source_url") else []) + [""]
         att_brief, att_text = attachment_sections(it["attachments"])
-        parts = head + ["## 본문", "", it["body"] or "(본문 없음)", ""] + att_text
+        imgs = (["## 본문 이미지 (공고문이 이미지로만 올라와 있음 — Read 도구로 아래 파일을 열어 내용을 확인)", ""]
+                + [f"- {p}" for p in it["images"]] + [""]) if it.get("images") else []
+        parts = head + ["## 본문", "", it["body"] or "(본문 없음)", ""] + imgs + att_text
         (out / "text" / f"{it['uid']}.md").write_text("\n".join(parts), "utf-8")
-        bparts = head + ["## 본문 (발췌)", "", make_brief(it["body"]) or "(본문 없음)", ""] + att_brief
+        bparts = head + ["## 본문 (발췌)", "", make_brief(it["body"]) or "(본문 없음)", ""] + imgs + att_brief
         (out / "brief" / f"{it['uid']}.md").write_text("\n".join(bparts), "utf-8")
 
 
@@ -629,6 +667,12 @@ def collect(site, a, out: Path, date_from: str, date_to: str, known: list) -> li
                     att["skipped"] = "download_failed"
                     log(f"  ! 첨부 실패 {att['name']}: {e}")
                 time.sleep(0.3)
+        # 공고문이 이미지로만 올라왔고 읽을 수 있는 첨부(양식 제외)도 없으면 이미지를 받아 둔다 — 판정 때 직접 열어 본다
+        imgs = d.pop("body_images", [])
+        readable = any((att.get("text") or att.get("parts")) and not is_form_attachment(att["name"]) for att in d["attachments"])
+        if d["body"] == IMAGE_ONLY and not readable and not a.no_attach:
+            d["images"] = save_images(imgs, out / "images" / r["uid"])
+            log(f"  + 본문 이미지 {len(d['images'])}장")
         items.append(d)
         time.sleep(0.5)
     return items
