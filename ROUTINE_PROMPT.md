@@ -52,24 +52,23 @@ python boards_collect.py --group chungnam --days 4 --out out/chungnam --dedupe o
 - 공고마다 어느 기관·게시판인지는 digest와 brief 머리의 `수행기관`·`분야`(사업공고 / 입찰공고 등)에 있습니다.
 - **묶음 안에서 한 사이트가 실패해도 나머지는 수집됩니다.** 로그 끝에 `(수집 실패: 기관명)`이 붙으면 그 묶음 명령을 한 번 더 실행하고, 그래도 실패하면 그대로 진행하세요 — 실패한 기관 이름은 3절 요약 줄에 자동으로 붙습니다. 최종 응답에도 적으세요.
 - 충북테크노파크·천안문화재단은 목록에 등록일이 없어 **접수 중이고 아직 판정하지 않은 공고가 모두** 들어옵니다(처음 추가한 날에만 여러 건, 이후에는 새 글만). 선정·평가·입찰 **결과 공고**는 새로 추가한 기관(충북TP·충남 4곳)에서 자동 제외됩니다.
-- 중소벤처기업부 충북·충남 지방청 게시판은 수집하지 않습니다. 중기부 공고는 아래 중기부 묶음으로 들어옵니다.
+- 중소벤처기업부 충북·충남 지방청 게시판(www.mss.go.kr)은 클라우드에서 연결이 끊겨 수집하지 않습니다. 기업마당에 올라온 중기부 소관 공고는 아래 mss 소스로 들어옵니다.
 
 ## 1-d. 중소벤처기업부 / 기업마당 / NIPA / 과학기술정보통신부 수집
 ```
-python boards_collect.py --group mss --days 4 --out out/mss --dedupe out out/chungbuk out/chungnam
+python boards_collect.py --site mss --days 4 --out out/mss --dedupe out out/chungbuk out/chungnam
 python boards_collect.py --site bizinfo --days 4 --out out/bizinfo --dedupe out out/chungbuk out/chungnam out/mss
 python boards_collect.py --site bizinfo_other --days 4 --out out/bizinfo_other --dedupe out out/chungbuk out/chungnam out/mss out/bizinfo
 python boards_collect.py --site nipa --days 4 --out out/nipa --dedupe out out/chungbuk out/chungnam out/mss
 python boards_collect.py --site msit --days 4 --out out/msit --dedupe out out/chungbuk out/chungnam out/mss out/nipa
 python boards_collect.py --site bizinfo_central --days 4 --out out/bizinfo_central --dedupe out out/chungbuk out/chungnam out/mss out/bizinfo out/bizinfo_other out/nipa out/msit
 ```
-- **중기부 묶음**(`--group mss`, `out/mss`): 중기부 홈페이지 사업공고(www.mss.go.kr cbIdx=310)를 먼저 받고, 이어서 기업마당 API의 중기부 소관 공고를 받아 한 폴더에 모읍니다(같은 제목은 중복으로 빠짐). 홈페이지에는 본부가 직접 내는 공고 중 기업마당에 없는 것이 있습니다. **www.mss.go.kr은 2026-10-20부터 클라우드에서 연결이 끊겼던 사이트**라 실패할 수 있습니다 — 로그 끝에 `(수집 실패: 중기부 홈페이지)`가 나와도 **재시도하지 말고** 그대로 진행하세요(API 쪽은 수집됨, 요약 줄에 자동 표시).
-- bizinfo·bizinfo_other·bizinfo_central과 중기부 묶음의 API 쪽은 **공공데이터포털 기업마당 API**(`G2B_SERVICE_KEY`와 같은 키)로 받아 소관기관으로 나눕니다. www.mss.go.kr·www.bizinfo.go.kr은 클라우드에서 연결이 끊기므로(2026-10-20~) 첨부는 받지 못할 수 있습니다 — brief 맨 아래 `⚠ 읽지 못한 첨부`에 `(다운로드 실패)`로 나오면 본문(사업개요·지원대상)으로 판정하고, 본문만으로 과업·자격을 확정할 수 없으면 읽지 못한 첨부와 같은 규칙(아래 2절)으로 `조건부` + `action`에 "원문 첨부(<파일명>) 직접 확인 필요"를 적으세요.
-- 중기부 묶음의 API 쪽: 기업마당 공고 중 **소관이 중소벤처기업부**인 공고(창업진흥원·소진공·중진공·지방중기청 수행분 포함). 키워드 필터 없음
+- mss·bizinfo·bizinfo_other·bizinfo_central은 **공공데이터포털 기업마당 API**(`G2B_SERVICE_KEY`와 같은 키)로 받아 소관기관으로 나눕니다. www.mss.go.kr·www.bizinfo.go.kr은 클라우드에서 연결이 끊기므로(2026-10-20~) 첨부는 받지 못할 수 있습니다 — brief 맨 아래 `⚠ 읽지 못한 첨부`에 `(다운로드 실패)`로 나오면 본문(사업개요·지원대상)으로 판정하고, 본문만으로 과업·자격을 확정할 수 없으면 읽지 못한 첨부와 같은 규칙(아래 2절)으로 `조건부` + `action`에 "원문 첨부(<파일명>) 직접 확인 필요"를 적으세요.
+- mss: 기업마당 공고 중 **소관이 중소벤처기업부**인 공고(창업진흥원·소진공·중진공·지방중기청 수행분 포함). 중기부 홈페이지 사업공고도 접수 중인 것은 모두 여기 들어 있어 홈페이지는 따로 받지 않습니다. 키워드 필터 없음
 - bizinfo: 기업마당 지원사업 중 **충북·충남**, 접수중
 - bizinfo_other: 기업마당 지원사업 중 **그 외 14개 시·도**, 접수중. 대부분 해당 지역 소상공인 전용이라 `bizinfo_keywords.txt`로 공고명 1차 필터를 거친 것만 남습니다.
 - nipa: https://www.nipa.kr/home/2-2 (정보통신산업진흥원 사업공고 — XR 센터 입주·쇼룸처럼 기업마당에 없는 공고가 있음)
-- msit: https://www.msit.go.kr/bbs/list.do?sCode=user&mPid=121&mId=311 (과학기술정보통신부 사업공고). R&D 신규과제 공모는 NTIS에도 올라오므로 `--dedupe out`으로 겹치는 공고가 빠지고, 선정결과 공고는 자동 제외됩니다. 실패하면 한 번 재시도 후 건너뛰세요.
+- msit: https://www.msit.go.kr/bbs/list.do?sCode=user&mPid=121&mId=311 (과학기술정보통신부 사업공고). R&D 신규과제 공모는 NTIS에도 올라오므로 `--dedupe out`으로 겹치는 공고가 빠지고(반대로 과기부에서 먼저 판정한 공고가 나중에 NTIS에 올라오면 NTIS 수집기가 제목으로 걸러냄), 선정결과 공고는 자동 제외됩니다. 실패하면 한 번 재시도 후 건너뛰세요.
 - bizinfo_central: 기업마당 지원사업 중 **소관이 중앙부처**인 공고(KOCCA·NIPA·산업부 등 국비 사업, `[충북]` 말머리가 붙은 국비 공고 포함, 중기부 소관은 mss로), 접수중. `bizinfo_keywords.txt`로 1차 필터.
 - 기업마당은 충북·충남 기관(충북과기혁신원·테크노파크 등)과 중기부 공고를 재게시하므로 **1-c부터 이 순서대로** 실행해야 `--dedupe`가 앞 소스와 `state/seen.json`의 같은 공고를 걸러냅니다. 한 사이트가 실패해도 나머지는 진행하고 최종 응답에 적으세요.
 
@@ -150,7 +149,7 @@ python seen_state.py mark --out out/g2b --source g2b
 python seen_state.py mark --out out/g2b_pre --source g2b_pre
 python seen_state.py mark --out out/chungbuk
 python seen_state.py mark --out out/chungnam
-python seen_state.py mark --out out/mss
+python seen_state.py mark --out out/mss --source mss
 python seen_state.py mark --out out/bizinfo --source bizinfo
 python seen_state.py mark --out out/bizinfo_other --source bizinfo_other
 python seen_state.py mark --out out/nipa --source nipa

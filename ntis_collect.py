@@ -42,7 +42,7 @@ KST = ZoneInfo("Asia/Seoul")
 def now_kst() -> dt.datetime:
     return dt.datetime.now(KST)
 
-from seen_state import seen_uids
+from seen_state import find_seen, seen_uids
 
 BASE = "https://www.ntis.go.kr"
 LIST_URL = f"{BASE}/rndgate/eg/un/ra/mng.do"
@@ -679,6 +679,16 @@ def main() -> int:
         before = len(rows)
         rows = [r for r in rows if not dday(r["end"]).startswith("마감")]
         log(f"마감 지난 공고 제외: {before - len(rows)}건")
+    if not a.no_seen:
+        # 과기부 사업공고(msit)에서 먼저 판정한 공고가 며칠 뒤 NTIS에 올라오면 두 번 판정하지 않는다
+        kept = []
+        for r in rows:
+            dup = find_seen(("msit",), r["title"])
+            if dup:
+                log(f"  과기부에서 이미 판정: {r['title'][:50]} (= msit {dup['uid']})")
+            else:
+                kept.append(r)
+        rows = kept
     if a.limit:
         rows = rows[: a.limit]
     log(f"상세 수집 대상 {len(rows)}건")

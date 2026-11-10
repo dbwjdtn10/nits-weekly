@@ -6,7 +6,6 @@
   bizinfo_other : 기업마당 — 충북·충남 외 14개 시·도, 접수중. bizinfo_keywords.txt로 공고명 1차 필터
   bizinfo_central : 기업마당 — 소관이 중앙부처인 공고(KOCCA·NIPA 등 국비 사업, 중기부 제외), 접수중. bizinfo_keywords.txt로 1차 필터
   mss     : 기업마당 — 소관이 중소벤처기업부인 공고 (같은 API)
-  mss_site: 중소벤처기업부 홈페이지 사업공고  https://www.mss.go.kr/site/smba/ex/bbs/List.do?cbIdx=310
   msit    : 과학기술정보통신부 사업공고  https://www.msit.go.kr/bbs/list.do?sCode=user&mPid=121&mId=311
   nipa    : 정보통신산업진흥원 사업공고  https://www.nipa.kr/home/2-2
   cbist   : 충북과학기술혁신원 사업공고  https://www.cbist.or.kr/home/sub.do?mncd=1131
@@ -17,8 +16,8 @@
   cfac    : 천안문화재단 모집공고·입찰공고  https://www.cfac.or.kr
   ccon    : 충남콘텐츠진흥원(옛 충남정보문화산업진흥원) 사업공고·입찰공고  https://ccon.kr
 
-묶음(--group): 여러 사이트를 한 폴더에 모아 Discord에 이름 하나로 나가게 한다.
-  chungbuk : cbist + riia + cbtp      chungnam : ctp + cistep + cfac + ccon      mss : mss_site + mss(API)
+지역 묶음(--group): 여러 사이트를 한 폴더에 모아 Discord에 지역 하나로 나가게 한다.
+  chungbuk : cbist + riia + cbtp      chungnam : ctp + cistep + cfac + ccon
   묶음 안에서 한 사이트가 실패해도 나머지는 수집하고, 실패한 사이트는 announcements.json의 failed에 적는다.
 
 지정 기간(기본: 지난주 월~일)에 등록된 공고의 상세 본문과 첨부를 내려받아
@@ -209,53 +208,13 @@ class BizinfoCentral(Bizinfo):
 # --------------------------------------------------------------------------- 중소벤처기업부
 class Mss(Bizinfo):
     """기업마당에서 소관이 중소벤처기업부인 공고 (창업진흥원·소진공·중진공·지방중기청·TP 수행분 포함).
-    2026-10-19까지는 www.mss.go.kr 사업공고 게시판(cbIdx=310, uid는 게시글 번호)에서 받았다."""
+    2026-10-19까지는 www.mss.go.kr 사업공고 게시판(cbIdx=310, uid는 게시글 번호)에서 받았다.
+    홈페이지 게시판을 따로 받을 필요는 없다 — 2026-11-10 대조에서 접수 중인 홈페이지 공고 14건이 모두 이 API에 있었고
+    (등록은 0~3일 늦다), API에는 홈페이지에 없는 산하기관 공고가 더 있다. API는 접수 중인 공고만 준다."""
     key, label = "mss", "중소벤처기업부"
 
     def in_scope(self, row: dict) -> bool:
         return row["dept"] == "중소벤처기업부"
-
-
-class MssSite:
-    """중소벤처기업부 홈페이지 사업공고 게시판(cbIdx=310). 본부가 직접 내는 공고 가운데 기업마당 API에 없는 것이 있어
-    (2026-10-01~11-10 등록 21건 중 7건) API와 함께 받는다. 2026-10-20부터 클라우드에서는 연결이 끊겼던 사이트라
-    묶음(--group mss)으로만 돌려, 실패해도 API 쪽은 그대로 수집되게 한다."""
-    key, label = "mss_site", "중기부 홈페이지"
-    KEYWORDS = ""
-    SKIP_TITLE = RESULT_TITLE
-    BASE = "https://www.mss.go.kr"
-    LIST = f"{BASE}/site/smba/ex/bbs/List.do"
-    VIEW = f"{BASE}/site/smba/ex/bbs/View.do"
-
-    def list_page(self, page: int) -> list[dict]:
-        h = get(self.LIST, params={"cbIdx": 310, "pageIndex": page}, headers=UA_HEADERS).text
-        rows = []
-        for m in re.finditer(r"<tr[^>]*onclick=\"doBbsFView\('310','(\d+)'[^>]*title=\"([^\"]*)\"(.*?)</tr>", h, re.S):
-            tr = m[3]
-            info = dict((clean_ws(k), clean_ws(strip_tags(v))) for k, v in re.findall(r"<dt>(.*?)</dt>\s*<dd>(.*?)</dd>", tr, re.S))
-            reg = re.search(r"<td>\s*(\d{4}\.\d{2}\.\d{2})\s*</td>", tr)
-            start, end = period(info.get("신청기간", ""))
-            rows.append({"uid": m[1], "title": clean_ws(m[2]), "reg_date": dash_date(reg[1]) if reg else "",
-                         "start": start, "end": end, "status": "", "period_text": info.get("신청기간", ""),
-                         "dept": "중소벤처기업부", "agency": "중소벤처기업부 " + info.get("담당부서", ""),
-                         "form": "사업공고", "program": info.get("공고번호", "")})
-        return rows
-
-    def detail(self, row: dict) -> dict:
-        url = f"{self.VIEW}?cbIdx=310&bcIdx={row['uid']}&parentSeq={row['uid']}"
-        h = get(url, headers=UA_HEADERS).text
-        ta = re.search(r'<textarea id="editContents"[^>]*>(.*?)</textarea>', h, re.S)
-        body = strip_tags(html.unescape(ta[1])) if ta else ""
-        atts, stems = [], set()
-        fl = re.search(r'class="file_list">(.*?)</td>', h, re.S)
-        for name, href in re.findall(r'<span class="name">(.*?)<em>.*?href="(/common/board/Download\.do\?[^"]+)"', fl[1] if fl else "", re.S):
-            nm = clean_ws(strip_tags(name))
-            stem = re.sub(r"\.[A-Za-z0-9]+$", "", nm)
-            if stem in stems:   # 같은 공고문을 hwpx·pdf 두 벌로 올리는 경우가 많아 하나만 받는다
-                continue
-            stems.add(stem)
-            atts.append({"name": nm, "url": abs_url(self.BASE, href)})
-        return {"ntis_url": url, "source_url": "", "body": body, "attachments": atts, "contact": ""}
 
 
 # --------------------------------------------------------------------------- 충북 지역혁신클러스터
@@ -619,11 +578,9 @@ class Msit:
                 "body_images": body_images(frag, self.BASE)}
 
 
-SITES = {s.key: s for s in (Bizinfo, BizinfoOther, BizinfoCentral, Mss, MssSite, Riia, Nipa, Cbist, Cbtp, Ctp, Cistep, Cfac, Ccon, Msit)}
-# 묶음: Discord에 이름 하나로 나간다. 판정 기록(seen.json)은 사이트별로 남는다.
-# mss는 홈페이지를 먼저 받고(첨부를 받을 수 있다) 기업마당 API에서 같은 제목은 중복으로 거른다
-GROUPS = {"chungbuk": ("충북", (Cbist, Riia, Cbtp)), "chungnam": ("충남", (Ctp, Cistep, Cfac, Ccon)),
-          "mss": ("중기부", (MssSite, Mss))}
+SITES = {s.key: s for s in (Bizinfo, BizinfoOther, BizinfoCentral, Mss, Riia, Nipa, Cbist, Cbtp, Ctp, Cistep, Cfac, Ccon, Msit)}
+# 지역 묶음: Discord에 지역 이름 하나로 나간다. 판정 기록(seen.json)은 사이트별로 남는다
+GROUPS = {"chungbuk": ("충북", (Cbist, Riia, Cbtp)), "chungnam": ("충남", (Ctp, Cistep, Cfac, Ccon))}
 
 
 # --------------------------------------------------------------------------- 공통
