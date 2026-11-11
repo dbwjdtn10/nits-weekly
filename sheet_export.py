@@ -6,6 +6,7 @@
   - 엑셀은 드라이브에서 내려받아 줄만 덧붙이고 같은 파일로 다시 올린다 → 링크가 바뀌지 않고, 사람이 고친 내용도 남는다.
   - 드라이브의 `첨부파일` 폴더 안에 공고마다 폴더를 만들어 첨부 전부를 올리고, 첨부파일 칸에 그 폴더 링크를 건다.
   - 이미 적합으로 올린 공고의 재공고는 새 줄 대신 그 줄의 마감일·링크만 고친다.
+  - 엑셀의 둘째 탭 `공고내용`에는 그 txt와 같은 글을 3만 자씩 나눠 담는다(열: 사업명·공고 링크·순번·내용 — 순번대로 이으면 원문).
   - 같은 폴더에 `공고내용.txt`도 넣는다 — 공고 기본 정보 + 과업지시서·제안요청서·공고문 본문 전체(잘림 없이). HWP를 못 읽는
     프로그램(제안서 초안 작성 등)이 이 파일 하나만 읽으면 되도록. 양식·법령류는 이름만 적는다.
 
@@ -160,6 +161,56 @@ def open_book(data: bytes | None):
     return wb, ws
 
 
+TEXT_SHEET = "공고내용"          # 프로그램·AI가 읽는 탭 — 공고내용.txt와 같은 글을 칸 한도에 맞춰 나눠 담는다
+TEXT_HEADERS = ["사업명", "공고 링크", "순번", "내용"]
+CELL_MAX = 30_000              # 엑셀 한 칸은 32,767자까지
+
+
+def split_cells(text: str, size: int = CELL_MAX) -> list[str]:
+    """긴 글을 줄 경계에서 size 이하 조각으로 나눈다 (순번대로 이어 붙이면 원문)."""
+    parts, cur = [], ""
+    for line in text.splitlines(keepends=True):
+        while len(line) > size:   # 한 줄이 한도를 넘는 경우
+            if cur:
+                parts.append(cur)
+                cur = ""
+            parts.append(line[:size])
+            line = line[size:]
+        if len(cur) + len(line) > size:
+            parts.append(cur)
+            cur = ""
+        cur += line
+    if cur:
+        parts.append(cur)
+    return parts
+
+
+def write_text_rows(wb, title: str, link: str, text: str) -> None:
+    """'공고내용' 탭에 공고 한 건의 글을 넣는다. 같은 공고(링크)가 이미 있으면 지우고 다시 넣는다."""
+    if TEXT_SHEET in wb.sheetnames:
+        ws = wb[TEXT_SHEET]
+    else:
+        ws = wb.create_sheet(TEXT_SHEET)
+        ws.append(TEXT_HEADERS)
+        for c in ws[1]:
+            c.font, c.fill = Font(bold=True), PatternFill("solid", fgColor="D9E1F2")
+            c.alignment = Alignment(horizontal="center", vertical="center")
+        for col, w in {"A": 40, "B": 30, "C": 6, "D": 100}.items():
+            ws.column_dimensions[col].width = w
+        ws.freeze_panes = "A2"
+    for n in range(ws.max_row, 1, -1):
+        if ws.cell(n, 2).value == link:
+            ws.delete_rows(n)
+    for i, part in enumerate(split_cells(text), 1):
+        n = ws.max_row + 1
+        ws.cell(n, 1).value, ws.cell(n, 2).value, ws.cell(n, 3).value = title, link, i
+        c = ws.cell(n, 4)
+        c.value = part
+        c.data_type = "s"          # '='로 시작하는 줄이 수식으로 읽히지 않게
+        for k in range(1, 5):
+            ws.cell(n, k).alignment = Alignment(wrap_text=False, vertical="top")   # 줄바꿈 표시를 꺼서 행이 길게 늘어나지 않게
+
+
 def set_link(cell, text: str, url: str) -> None:
     cell.value = text
     cell.hyperlink = url
@@ -265,14 +316,14 @@ def notice_text(it: dict, r: dict, got: list[tuple[dict, Path]], missed: list[di
     return "\n".join(lines)
 
 
-def upload_docs(drive, it: dict, r: dict, out: Path, reg: dt.date | None, text_only: bool = False) -> tuple[str, int, str]:
-    """공고 첨부와 공고내용.txt를 공고별 폴더에 올린다. 반환: (폴더 링크, 올린 첨부 개수 — txt 제외, 공고내용.txt 링크)
+def upload_docs(drive, it: dict, r: dict, out: Path, reg: dt.date | None, text_only: bool = False) -> tuple[str, int, str, str]:
+    """공고 첨부와 공고내용.txt를 공고별 폴더에 올린다. 반환: (폴더 링크, 올린 첨부 개수 — txt 제외, 공고내용.txt 링크, 그 글)
     text_only: 첨부는 다시 올리지 않고 공고내용.txt만 새로 만든다."""
     got, missed = gather_docs(it, out)
     got += prespec_docs(it, out)
     folder = safe_name((f"{reg:%y%m%d} " if reg else "") + it.get("title", it["uid"]), 70)
     url = drive.folder(folder)
-    n, used, text_url = 0, {TEXT_NAME}, ""
+    n, used, text_url, text = 0, {TEXT_NAME}, "", ""
     for att, p in ([] if text_only else got):
         name = safe_name(att.get("name") or p.name, 150)
         if name in used or p.stat().st_size > MAX_UPLOAD:
@@ -287,11 +338,12 @@ def upload_docs(drive, it: dict, r: dict, out: Path, reg: dt.date | None, text_o
     try:
         txt = out / "bundle" / re.sub(r"[^0-9A-Za-z_-]", "_", it["uid"]) / TEXT_NAME
         txt.parent.mkdir(parents=True, exist_ok=True)
-        txt.write_text(notice_text(it, r, got, missed), "utf-8")
+        text = notice_text(it, r, got, missed)
+        txt.write_text(text, "utf-8")
         text_url = drive.upload(folder, TEXT_NAME, txt, replace=True)
     except Exception as e:  # noqa: BLE001
         log(f"  ! {TEXT_NAME} 만들기·올리기 실패: {str(e)[:150]}")
-    return url, n, text_url
+    return url, n, text_url, text
 
 
 def main() -> int:
@@ -319,9 +371,12 @@ def main() -> int:
         link = it.get("ntis_url", "")
         if link in rows:   # 같은 날 다시 실행된 경우
             if a.refresh_text:
-                _, _, text_url = upload_docs(drive, it, r, out, end_date(it.get("announce_date", "")), text_only=True)
+                _, _, text_url, text = upload_docs(drive, it, r, out, end_date(it.get("announce_date", "")), text_only=True)
+                if text:
+                    write_text_rows(wb, it.get("title", ""), link, text)
                 if text_url:
                     set_link(ws.cell(rows[link], 6), text_url, text_url)
+                if text or text_url:
                     updated += 1
                     log(f"  공고내용 갱신: {it.get('title', '')[:50]}")
             continue
@@ -340,7 +395,9 @@ def main() -> int:
         if make or not old:
             ws.cell(n, 4).value = make
             ws.cell(n, 4).alignment = WRAP
-        folder, cnt, text_url = upload_docs(drive, it, r, out, reg)
+        folder, cnt, text_url, text = upload_docs(drive, it, r, out, reg)
+        if text:   # 같은 글을 '공고내용' 탭에도 — 엑셀 파일 하나만 받아도 프로그램이 본문을 읽을 수 있게
+            write_text_rows(wb, it.get("title", ""), link, text)
         if text_url:   # 링크를 글자 그대로 적는다 — 프로그램이 칸의 글자만 읽어도 공고내용.txt를 찾을 수 있게
             set_link(ws.cell(n, 6), text_url, text_url)
             ws.cell(n, 6).alignment = TOP
