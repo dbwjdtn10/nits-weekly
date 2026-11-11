@@ -4,7 +4,7 @@
 
   열: 사업명(공고 링크) · 등록일 · 마감일 · 만들것 · 첨부파일(드라이브 폴더 링크)
   - 엑셀은 드라이브에서 내려받아 줄만 덧붙이고 같은 파일로 다시 올린다 → 링크가 바뀌지 않고, 사람이 고친 내용도 남는다.
-  - 공고마다 드라이브에 폴더를 만들어 첨부 전부를 올리고, 첨부파일 칸에 그 폴더 링크를 건다.
+  - 드라이브의 `첨부파일` 폴더 안에 공고마다 폴더를 만들어 첨부 전부를 올리고, 첨부파일 칸에 그 폴더 링크를 건다.
   - 이미 적합으로 올린 공고의 재공고는 새 줄 대신 그 줄의 마감일·링크만 고친다.
 
 드라이브 연결: 사용자 구글 계정의 Apps Script 웹앱(drive_webapp.gs)에 요청을 보낸다. 주소는 환경변수 DRIVE_WEBAPP_URL
@@ -42,6 +42,7 @@ LINK = Font(color="0563C1", underline="single")
 WRAP = Alignment(wrap_text=True, vertical="top")
 TOP = Alignment(vertical="top")
 MAX_UPLOAD = 30 * 1024 * 1024   # Apps Script 요청 한도 50MB (base64로 1.33배)
+ATTACH = "첨부파일"   # 드라이브에서 공고별 첨부 폴더를 모아 두는 폴더 (drive_webapp.gs와 같은 이름)
 MIME = {".hwp": "application/x-hwp", ".hwpx": "application/hwp+zip"}
 
 
@@ -106,11 +107,11 @@ class LocalDrive:
         return str(self.root / name)
 
     def folder(self, name: str) -> str:
-        (self.root / name).mkdir(exist_ok=True)
-        return (self.root / name).resolve().as_uri()
+        (self.root / ATTACH / name).mkdir(parents=True, exist_ok=True)
+        return (self.root / ATTACH / name).resolve().as_uri()
 
     def upload(self, folder: str, name: str, path: Path) -> None:
-        shutil.copyfile(path, self.root / folder / name)
+        shutil.copyfile(path, self.root / ATTACH / folder / name)
 
 
 def fits(outs: list[Path]):

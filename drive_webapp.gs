@@ -5,9 +5,21 @@
 const FOLDER = '여기에 드라이브 폴더 링크를 붙여 넣으세요';   // 예: https://drive.google.com/drive/folders/1AbC...
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const ATTACH = '첨부파일';   // 공고별 첨부 폴더를 모아 두는 폴더 — 위 폴더에는 엑셀과 이 폴더만 남는다
 
 function root_() {
   return DriveApp.getFolderById(FOLDER.match(/[-\w]{25,}/)[0]);
+}
+
+/** 공고별 첨부 폴더: 첨부파일 폴더 안에서 찾고, 예전에 바깥에 만들어진 것은 안으로 옮기고, 없으면 만든다. */
+function noticeFolder_(root, name) {
+  let it = root.getFoldersByName(ATTACH);
+  const base = it.hasNext() ? it.next() : root.createFolder(ATTACH);
+  it = base.getFoldersByName(name);
+  if (it.hasNext()) return it.next();
+  it = root.getFoldersByName(name);
+  if (it.hasNext() && name !== ATTACH) return it.next().moveTo(base);
+  return base.createFolder(name);
 }
 
 /** 처음 한 번 실행해 권한을 승인한다. 실행 로그에 폴더 이름이 나오면 연결된 것. */
@@ -46,12 +58,11 @@ function handle_(q) {
       return {url: url, recreated: String(err)};
     }
   }
-  if (q.action === 'folder') {         // 공고별 첨부 폴더
-    const it = root.getFoldersByName(q.name);
-    return {url: (it.hasNext() ? it.next() : root.createFolder(q.name)).getUrl()};
+  if (q.action === 'folder') {         // 공고별 첨부 폴더 (첨부파일 폴더 안에 만든다)
+    return {url: noticeFolder_(root, q.name).getUrl(), parent: ATTACH};
   }
   if (q.action === 'upload') {         // 첨부 올리기 — 같은 이름이 이미 있으면 그대로 둔다
-    const folder = root.getFoldersByName(q.folder).next();
+    const folder = noticeFolder_(root, q.folder);
     const it = folder.getFilesByName(q.name);
     if (it.hasNext()) return {url: it.next().getUrl(), existed: true};
     return {url: folder.createFile(Utilities.newBlob(Utilities.base64Decode(q.b64), q.mime || 'application/octet-stream', q.name)).getUrl()};
