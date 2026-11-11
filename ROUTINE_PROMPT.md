@@ -145,7 +145,7 @@ python discord_post.py --out out/bizinfo_central --title "기업마당(중앙부
 - 전송 로그에 오류가 있으면 `--no-files`로 한 번 더 시도하세요.
 
 ## 3-b. 적합 공고 엑셀 정리 (구글 드라이브)
-Discord 발송이 끝난 뒤, 적합 판정 **본공고**(사전규격 제외)를 구글 드라이브 폴더의 엑셀(`적합공고.xlsx`)에 한 줄씩 덧붙이고 공고 첨부를 공고별 폴더에 올립니다:
+Discord 발송이 끝난 뒤, 적합 판정 **본공고**(사전규격 제외)를 구글 드라이브 폴더의 엑셀(`적합공고.xlsx`)에 한 줄씩 덧붙이고(사업명·등록일·마감일·만들것·첨부파일·공고내용) 공고 첨부를 공고별 폴더에 올립니다:
 ```
 python sheet_export.py out out/g2b out/chungbuk out/chungnam out/mss out/bizinfo out/bizinfo_other out/nipa out/msit out/bizinfo_central
 ```

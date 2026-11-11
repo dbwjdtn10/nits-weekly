@@ -282,6 +282,63 @@ def _hwp_records(data: bytes):
 
 
 HWPTAG_PARA_TEXT = 0x10 + 51  # 67
+HWPTAG_CTRL_HEADER = 0x10 + 55  # 71
+HWPTAG_LIST_HEADER = 0x10 + 56  # 72
+HWPTAG_TABLE = 0x10 + 61  # 77
+
+
+def _table_lines(rows: list[list[str]], nested: bool) -> str:
+    """표의 행들(칸마다 원문 텍스트) → 한 행에 한 줄 '칸 | 칸 | 칸'. 칸 안의 줄바꿈은 공백으로 잇는다.
+    칸이 하나뿐인 행(글상자처럼 쓰는 표)은 문단 줄바꿈을 그대로 둔다. 표 안의 표는 한 줄로 ' ; '로 잇는다."""
+    lines = []
+    for cells in rows:
+        if len(cells) == 1 and not nested:
+            if cells[0].strip():
+                lines.append(cells[0].strip("\n"))
+            continue
+        flat = [re.sub(r"\s+", " ", c).strip() for c in cells]
+        if any(flat):
+            lines.append(" | ".join(flat))
+    if not lines:
+        return ""
+    return " ; ".join(lines) if nested else "\n".join(lines) + "\n"
+
+
+def _hwp_section_text(raw: bytes) -> list[str]:
+    """HWP 레코드 스트림 → 문단 텍스트 목록. 표(컨트롤 'tbl ')는 칸의 행·열 주소로 묶어 한 행을 한 줄로 적는다."""
+    out: list[str] = []
+    tables: list[dict] = []   # 열려 있는 표(중첩 가능) — level: 표 컨트롤의 레벨, rows: {행: {열: [조각]}}, cell: 지금 채우는 칸
+
+    def emit(text: str) -> None:
+        if tables and tables[-1]["cell"] is not None:
+            tables[-1]["cell"].append(text)
+        else:
+            out.append(text)
+
+    def close() -> None:
+        t = tables.pop()
+        nested = bool(tables) and tables[-1]["cell"] is not None
+        rows = [["\n".join(t["rows"][r][c]) for c in sorted(t["rows"][r])] for r in sorted(t["rows"])]
+        text = _table_lines(rows, nested)
+        if text:
+            emit(text)
+
+    for tag, lvl, payload in _hwp_records(raw):
+        while tables and lvl <= tables[-1]["level"]:   # 표 컨트롤의 하위 레코드가 끝났다
+            close()
+        if tag == HWPTAG_CTRL_HEADER and payload[:4] == b" lbt":
+            tables.append({"level": lvl, "rows": {}, "cell": None, "started": False})
+        elif tag == HWPTAG_TABLE and tables and lvl == tables[-1]["level"] + 1:
+            tables[-1]["started"] = True   # 이 뒤의 문단 리스트가 칸이다 (앞의 것은 캡션)
+        elif (tag == HWPTAG_LIST_HEADER and tables and tables[-1]["started"]
+              and lvl == tables[-1]["level"] + 1 and len(payload) >= 12):
+            col, row = struct.unpack_from("<HH", payload, 8)
+            tables[-1]["cell"] = tables[-1]["rows"].setdefault(row, {}).setdefault(col, [])
+        elif tag == HWPTAG_PARA_TEXT:
+            emit(_hwp_para_text(payload))
+    while tables:
+        close()
+    return out
 
 
 def _hwp_para_text(payload: bytes) -> str:
@@ -333,9 +390,10 @@ def extract_hwp(path: Path) -> str:
                     raw = zlib.decompress(raw, -15)
                 except zlib.error:
                     raw = zlib.decompressobj(-15).decompress(raw)
-            for tag, _lvl, payload in _hwp_records(raw):
-                if tag == HWPTAG_PARA_TEXT:
-                    out.append(_hwp_para_text(payload))
+            try:
+                out += _hwp_section_text(raw)
+            except Exception:  # noqa: BLE001 — 표 구조가 예상과 다르면 문단만 순서대로
+                out += [_hwp_para_text(payload) for tag, _lvl, payload in _hwp_records(raw) if tag == HWPTAG_PARA_TEXT]
             if sum(map(len, out)) > MAX_TEXT_PER_FILE:
                 break
         text = "\n".join(out)
@@ -347,11 +405,45 @@ def extract_hwp(path: Path) -> str:
 
 
 def _xml_text(xml: bytes) -> str:
+    """HWPX·DOCX 본문 XML → 텍스트. 표는 한 행을 한 줄('칸 | 칸 | 칸')로 적는다 (_table_lines 참고)."""
     s = xml.decode("utf-8", "ignore")
-    s = re.sub(r"</(hp:p|w:p|hp:tr|w:tr)>", "\n", s)
-    s = re.sub(r"</(hp:tc|w:tc)>", " | ", s)
-    s = re.sub(r"<[^>]+>", "", s)
-    return html.unescape(s)
+    out: list[str] = []
+    cells: list[list[str]] = []   # 열려 있는 칸의 텍스트 조각 (표 안의 표면 여러 겹)
+    rows: list[list[str]] = []    # 열려 있는 행의 칸들
+    tables: list[list[list[str]]] = []   # 열려 있는 표의 행들
+    for tok in re.split(r"(<[^>]+>)", s):
+        if not tok:
+            continue
+        if tok[0] != "<":
+            (cells[-1] if cells else out).append(html.unescape(tok))
+            continue
+        m = re.match(r"<(/?)(?:hp|w):(p|tc|tr|tbl)\b", tok)
+        if not m or tok.endswith("/>"):
+            continue
+        closing, name = m[1] == "/", m[2]
+        if name == "tbl":
+            if not closing:
+                tables.append([])
+            elif tables:
+                text = _table_lines(tables.pop(), nested=bool(cells))
+                (cells[-1] if cells else out).append(text)
+        elif name == "tr":
+            if not closing:
+                rows.append([])
+            elif rows and tables:
+                tables[-1].append(rows.pop())
+        elif name == "tc":
+            if not closing:
+                cells.append([])
+            elif cells:
+                text = "".join(cells.pop())
+                if rows:
+                    rows[-1].append(text)
+                else:
+                    (cells[-1] if cells else out).append(text)
+        elif closing:   # 문단 끝
+            (cells[-1] if cells else out).append("\n")
+    return "".join(out)
 
 
 def extract_hwpx(path: Path) -> str:

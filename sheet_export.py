@@ -2,7 +2,7 @@
 """
 적합 공고(사전규격 제외, 본공고만)를 구글 드라이브 폴더의 엑셀 한 장에 한 줄씩 쌓는다.
 
-  열: 사업명(공고 링크) · 등록일 · 마감일 · 만들것 · 첨부파일(드라이브 폴더 링크)
+  열: 사업명(공고 링크) · 등록일 · 마감일 · 만들것 · 첨부파일(드라이브 폴더 링크) · 공고내용(공고내용.txt 링크를 글자 그대로)
   - 엑셀은 드라이브에서 내려받아 줄만 덧붙이고 같은 파일로 다시 올린다 → 링크가 바뀌지 않고, 사람이 고친 내용도 남는다.
   - 드라이브의 `첨부파일` 폴더 안에 공고마다 폴더를 만들어 첨부 전부를 올리고, 첨부파일 칸에 그 폴더 링크를 건다.
   - 이미 적합으로 올린 공고의 재공고는 새 줄 대신 그 줄의 마감일·링크만 고친다.
@@ -39,8 +39,8 @@ import ntis_collect as nc
 from discord_post import end_date, gather_docs, log
 from seen_state import same_title, title_key
 
-HEADERS = ["사업명", "등록일", "마감일", "만들것", "첨부파일"]
-WIDTHS = {"A": 48, "B": 12, "C": 12, "D": 70, "E": 14}
+HEADERS = ["사업명", "등록일", "마감일", "만들것", "첨부파일", "공고내용"]
+WIDTHS = {"A": 48, "B": 12, "C": 12, "D": 70, "E": 14, "F": 60}
 LINK = Font(color="0563C1", underline="single")
 WRAP = Alignment(wrap_text=True, vertical="top")
 TOP = Alignment(vertical="top")
@@ -89,9 +89,11 @@ class Drive:
     def folder(self, name: str) -> str:
         return self.call(action="folder", name=name)["url"]
 
-    def upload(self, folder: str, name: str, path: Path) -> None:
+    def upload(self, folder: str, name: str, path: Path, replace: bool = False) -> str:
+        """파일 링크를 돌려준다. 같은 이름이 이미 있으면 그대로 두고, replace면 내용을 바꾼다."""
         mime = MIME.get(path.suffix.lower()) or mimetypes.guess_type(name)[0] or "application/octet-stream"   # 드라이브 미리보기용
-        self.call(action="upload", folder=folder, name=name, mime=mime, b64=base64.b64encode(path.read_bytes()).decode())
+        return self.call(action="upload", folder=folder, name=name, mime=mime, replace=replace,
+                         b64=base64.b64encode(path.read_bytes()).decode())["url"]
 
 
 class LocalDrive:
@@ -113,8 +115,9 @@ class LocalDrive:
         (self.root / ATTACH / name).mkdir(parents=True, exist_ok=True)
         return (self.root / ATTACH / name).resolve().as_uri()
 
-    def upload(self, folder: str, name: str, path: Path) -> None:
+    def upload(self, folder: str, name: str, path: Path, replace: bool = False) -> str:
         shutil.copyfile(path, self.root / ATTACH / folder / name)
+        return (self.root / ATTACH / folder / name).resolve().as_uri()
 
 
 def fits(outs: list[Path]):
@@ -132,7 +135,14 @@ def fits(outs: list[Path]):
 def open_book(data: bytes | None):
     if data:
         wb = load_workbook(io.BytesIO(data))
-        return wb, wb.worksheets[0]
+        ws = wb.worksheets[0]
+        for i, h in enumerate(HEADERS, 1):   # 나중에 추가된 열(공고내용)이 없는 예전 엑셀에는 머리글을 붙인다
+            if ws.cell(1, i).value is None:
+                ws.cell(1, i).value = h
+                ws.cell(1, i).font, ws.cell(1, i).fill = Font(bold=True), PatternFill("solid", fgColor="D9E1F2")
+                ws.cell(1, i).alignment = Alignment(horizontal="center", vertical="center")
+                ws.column_dimensions[chr(64 + i)].width = WIDTHS[chr(64 + i)]
+        return wb, ws
     wb = Workbook()
     ws = wb.active
     ws.title = "적합 공고"
@@ -242,14 +252,15 @@ def notice_text(it: dict, r: dict, got: list[tuple[dict, Path]], missed: list[di
     return "\n".join(lines)
 
 
-def upload_docs(drive, it: dict, r: dict, out: Path, reg: dt.date | None) -> tuple[str, int]:
-    """공고 첨부와 공고내용.txt를 공고별 폴더에 올린다. 반환: (폴더 링크, 올린 첨부 개수 — txt 제외)"""
+def upload_docs(drive, it: dict, r: dict, out: Path, reg: dt.date | None, text_only: bool = False) -> tuple[str, int, str]:
+    """공고 첨부와 공고내용.txt를 공고별 폴더에 올린다. 반환: (폴더 링크, 올린 첨부 개수 — txt 제외, 공고내용.txt 링크)
+    text_only: 첨부는 다시 올리지 않고 공고내용.txt만 새로 만든다."""
     got, missed = gather_docs(it, out)
     got += prespec_docs(it, out)
     folder = safe_name((f"{reg:%y%m%d} " if reg else "") + it.get("title", it["uid"]), 70)
     url = drive.folder(folder)
-    n, used = 0, {TEXT_NAME}
-    for att, p in got:
+    n, used, text_url = 0, {TEXT_NAME}, ""
+    for att, p in ([] if text_only else got):
         name = safe_name(att.get("name") or p.name, 150)
         if name in used or p.stat().st_size > MAX_UPLOAD:
             log(f"  ! 올리지 않음(이름 중복·용량 초과): {name}")
@@ -264,10 +275,10 @@ def upload_docs(drive, it: dict, r: dict, out: Path, reg: dt.date | None) -> tup
         txt = out / "bundle" / re.sub(r"[^0-9A-Za-z_-]", "_", it["uid"]) / TEXT_NAME
         txt.parent.mkdir(parents=True, exist_ok=True)
         txt.write_text(notice_text(it, r, got, missed), "utf-8")
-        drive.upload(folder, TEXT_NAME, txt)
+        text_url = drive.upload(folder, TEXT_NAME, txt, replace=True)
     except Exception as e:  # noqa: BLE001
         log(f"  ! {TEXT_NAME} 만들기·올리기 실패: {str(e)[:150]}")
-    return url, n
+    return url, n, text_url
 
 
 def main() -> int:
@@ -275,6 +286,8 @@ def main() -> int:
     ap.add_argument("outs", nargs="+", help="수집 폴더들 (out, out/g2b, ...) — 없는 폴더·판정 없는 폴더는 건너뜀")
     ap.add_argument("--name", default="적합공고.xlsx", help="드라이브 폴더 안의 엑셀 파일 이름")
     ap.add_argument("--local", help="드라이브 대신 이 로컬 폴더에 만든다 (테스트)")
+    ap.add_argument("--refresh-text", action="store_true",
+                    help="이미 엑셀에 있는 공고도 공고내용.txt를 다시 만들어 바꿔 올리고 공고내용 칸을 채운다 (추출 방식을 고친 뒤)")
     a = ap.parse_args()
 
     url = os.environ.get("DRIVE_WEBAPP_URL", "").strip()
@@ -292,6 +305,12 @@ def main() -> int:
     for it, r, out in todo:
         link = it.get("ntis_url", "")
         if link in rows:   # 같은 날 다시 실행된 경우
+            if a.refresh_text:
+                _, _, text_url = upload_docs(drive, it, r, out, end_date(it.get("announce_date", "")), text_only=True)
+                if text_url:
+                    set_link(ws.cell(rows[link], 6), text_url, text_url)
+                    updated += 1
+                    log(f"  공고내용 갱신: {it.get('title', '')[:50]}")
             continue
         reg, end = end_date(it.get("announce_date", "")), end_date(it.get("end", ""))
         old = None
@@ -308,7 +327,10 @@ def main() -> int:
         if make or not old:
             ws.cell(n, 4).value = make
             ws.cell(n, 4).alignment = WRAP
-        folder, cnt = upload_docs(drive, it, r, out, reg)
+        folder, cnt, text_url = upload_docs(drive, it, r, out, reg)
+        if text_url:   # 링크를 글자 그대로 적는다 — 프로그램이 칸의 글자만 읽어도 공고내용.txt를 찾을 수 있게
+            set_link(ws.cell(n, 6), text_url, text_url)
+            ws.cell(n, 6).alignment = TOP
         if cnt or not old:   # 첨부를 못 받은 공고(기업마당 등)도 폴더에 공고내용.txt는 들어 있다
             set_link(ws.cell(n, 5), f"첨부 {cnt}개" if cnt else "공고내용만", folder)
         ws.cell(n, 5).alignment = TOP

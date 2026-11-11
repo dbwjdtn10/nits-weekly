@@ -61,11 +61,21 @@ function handle_(q) {
   if (q.action === 'folder') {         // 공고별 첨부 폴더 (첨부파일 폴더 안에 만든다)
     return {url: noticeFolder_(root, q.name).getUrl(), parent: ATTACH};
   }
-  if (q.action === 'upload') {         // 첨부 올리기 — 같은 이름이 이미 있으면 그대로 둔다
+  if (q.action === 'upload') {         // 첨부 올리기 — 같은 이름이 이미 있으면 그대로 둔다 (replace면 내용 교체)
     const folder = noticeFolder_(root, q.folder);
+    const blob = Utilities.newBlob(Utilities.base64Decode(q.b64), q.mime || 'application/octet-stream', q.name);
     const it = folder.getFilesByName(q.name);
-    if (it.hasNext()) return {url: it.next().getUrl(), existed: true};
-    return {url: folder.createFile(Utilities.newBlob(Utilities.base64Decode(q.b64), q.mime || 'application/octet-stream', q.name)).getUrl()};
+    if (!it.hasNext()) return {url: folder.createFile(blob).getUrl()};
+    const f = it.next();
+    if (!q.replace) return {url: f.getUrl(), existed: true};
+    try {                                // replace: 같은 파일의 내용만 바꿔 링크를 유지 (공고내용.txt)
+      Drive.Files.update({}, f.getId(), blob, {supportsAllDrives: true});
+      return {url: f.getUrl(), replaced: true};
+    } catch (err) {
+      const url = folder.createFile(blob).getUrl();
+      f.setTrashed(true);
+      return {url: url, recreated: String(err)};
+    }
   }
   throw new Error('알 수 없는 요청: ' + q.action);
 }
