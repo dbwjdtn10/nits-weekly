@@ -130,7 +130,7 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     m = sub.add_parser("mark")
     m.add_argument("--out", required=True)
-    m.add_argument("--source", choices=["ntis", "g2b", "g2b_pre", "cbist", "riia", "mss", "bizinfo", "bizinfo_other", "bizinfo_central", "nipa", "msit"],
+    m.add_argument("--source", choices=["ntis", "g2b", "g2b_pre", "cbist", "riia", "mss", "bizinfo", "bizinfo_other", "bizinfo_central", "nipa", "msit", "kstartup"],
                    help="생략하면 공고별 source(사이트)로 나눠 기록 — 지역 묶음(out/chungbuk, out/chungnam)에 사용")
     m.add_argument("--state", default=str(DEFAULT_PATH))
     p = sub.add_parser("prune")

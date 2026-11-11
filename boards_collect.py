@@ -13,6 +13,7 @@
   cbtp    : 충북테크노파크 사업공고  https://www.cbtp.or.kr (board_id=saup_notice)
   ctp     : 충남테크노파크 사업공고·입찰공고  https://www.ctp.or.kr
   cistep  : 천안과학산업진흥원 공지사항·입찰공고  https://www.cistep.re.kr
+  kstartup: K-Startup(창업진흥원) 사업공고 모집중  https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do — 행사·교육 분야 제외, bizinfo_keywords.txt로 1차 필터
   cfac    : 천안문화재단 모집공고·입찰공고  https://www.cfac.or.kr
   ccon    : 충남콘텐츠진흥원(옛 충남정보문화산업진흥원) 사업공고·입찰공고  https://ccon.kr
 
@@ -588,7 +589,124 @@ class Msit:
                 "body_images": body_images(frag, self.BASE)}
 
 
-SITES = {s.key: s for s in (Bizinfo, BizinfoOther, BizinfoCentral, Mss, Riia, Nipa, Cbist, Cbtp, Ctp, Cistep, Cfac, Ccon, Msit)}
+# --------------------------------------------------------------------------- K-Startup (창업진흥원)
+class Kstartup:
+    """K-Startup 사업공고 '모집중' 목록 (중앙부처·지자체·공공기관 탭 + 민간기관·교육기관 탭). 월 120건 이상인데
+    기업마당에는 거의 올라오지 않는다(2026-11-11 대조: 60건 중 2건). 절반이 행사·교육·상담 참가자 모집이라
+    목록의 지원분야가 SKIP_FORM인 글은 빼고(company_profile.md 6-4), 남은 글은 bizinfo_keywords.txt로 공고명 1차 필터를 한다.
+    지역이 충북·충남인 공고는 키워드와 상관없이 판정에 넘긴다 (기업마당 충북·충남과 같은 취급).
+    같은 내용의 공공데이터포털 API(15125364)는 활용신청이 따로 필요해 쓰지 않는다."""
+    key, label = "kstartup", "K-Startup"
+    KEYWORDS = "bizinfo_keywords.txt"
+    SKIP_TITLE = RESULT_TITLE
+    SKIP_FORM = ("행사ㆍ네트워크", "창업교육", "멘토링ㆍ컨설팅ㆍ교육")
+    LOCAL = "LC11,LC10"   # 지역 조건: 충청북도, 충청남도
+    BASE = "https://www.k-startup.go.kr"
+    LIST = f"{BASE}/web/contents/bizpbanc-ongoing.do"
+    TABS = ("PBC010", "PBC020")   # 중앙부처·지자체·공공기관 / 민간기관·교육기관
+
+    def __init__(self) -> None:
+        self.local: set[str] | None = None
+
+    def in_scope(self, row: dict) -> bool:
+        return row["form"] not in self.SKIP_FORM
+
+    def _items(self, tab: str, page: int, **cond) -> list[str]:
+        h = get(self.LIST, params={"page": page, "pbancClssCd": tab, **cond}, headers=UA_HEADERS).text
+        i = h.find('id="bizPbancList"')   # 그 위의 띠(슬라이드)는 오래된 고정 공고라 읽지 않는다
+        return (h[i:] if i >= 0 else "").split('<li class="notice">')[1:]
+
+    def list_page(self, page: int) -> list[dict]:
+        if self.local is None:   # 충북·충남 공고 번호 (접수 중인 것이 10건 안팎이라 첫 페이지면 된다)
+            self.local = {m[1] for tab in self.TABS for li in self._items(tab, 1, suptReginCdList=self.LOCAL)
+                          if (m := re.search(r"go_view\((\d+)\)", li))}
+        rows = []
+        for tab in self.TABS:
+            for li in self._items(tab, page):
+                m = re.search(r"go_view\((\d+)\)", li)
+                title = re.search(r'<p class="tit">(.*?)</p>', li, re.S)
+                if not m or not title:
+                    continue
+                form = re.search(r'<span class="flag type\d+">(.*?)</span>', li, re.S)
+                info = [clean_ws(strip_tags(s)) for s in re.findall(r'<span class="list">(.*?)</span>', li, re.S)]
+
+                def day(label: str) -> str:
+                    return next((dash_date(s) for s in info if s.startswith(label)), "")
+
+                names = [s for s in info if not re.match(r"(등록일자|시작일자|마감일자|조회)\s", s)]
+                start, end = day("시작일자"), day("마감일자")
+                rows.append({"uid": m[1], "title": clean_ws(strip_tags(title[1])), "reg_date": day("등록일자"),
+                             "start": start, "end": end, "status": "", "period_text": f"{start} ~ {end}" if end else "",
+                             "dept": "K-Startup", "agency": names[1] if len(names) > 1 else "",
+                             "form": clean_ws(strip_tags(form[1])) if form else "", "program": names[0] if names else "",
+                             "keep": m[1] in self.local})
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        url = f"{self.LIST}?schM=view&pbancSn={row['uid']}"
+        h = re.sub(r"<!--.*?-->", "", get(url, headers=UA_HEADERS).text, flags=re.S).replace("-->", "")
+        # '접수 바로가기' 단추는 주소로 바꿔 본문에 남긴다
+        h = re.sub(r"""<a href="javascript:fn_open_window\('([^']+)'\);"[^>]*>(.*?)</a>""", r"\2 \1", h, flags=re.S)
+        i = h.find("information_box-wrap")
+        view = cut(h[i:], ('<div class="guide_wrap">', '<div class="board_file">', '<div class="copy_right_wrap">')) if i >= 0 else ""
+        j = view.find('class="information_list-wrap"')
+        top, rest = (view[:j], view[j:]) if j >= 0 else (view, "")
+
+        def pairs(seg: str) -> list[tuple[str, str]]:
+            """항목 이름(p.tit)과 값(p.txt·p.list)의 짝. 값이 없는 줄은 이름만 돌려준다."""
+            out = []
+            for li in seg.split('<li class="dot_list')[1:]:
+                tit = re.search(r'<p class="tit">(.*?)</p>', li, re.S)
+                val = re.search(r'<(p|div) class="(?:txt|list)"[^>]*>(.*?)</\1>', li[tit.end():] if tit else li, re.S)
+                k, v = clean_ws(strip_tags(tit[1])) if tit else "", strip_tags(val[2]) if val else ""
+                v = re.sub(r"\s*\n\s*", "\n", v).strip()
+                if k or v:
+                    out.append((k, clean_ws(v) if len(v) < 150 else v))   # 신청기간처럼 짧은 값은 한 줄로
+            return out
+
+        box = top.find('<div class="box">')
+        meta = dict(pairs(top[:box] if box >= 0 else top))
+        lines = [" | ".join(f"{k} {clean_ws(meta[k])}" for k in ("지원분야", "지역", "대상", "창업업력", "대상연령", "기관구분") if meta.get(k))]
+        intro = re.search(r'<p class="txt">(.*?)</p>', top[box:], re.S) if box >= 0 else None
+        if intro and strip_tags(intro[1]):
+            lines += ["", strip_tags(intro[1])]
+        for sec in rest.split('<div class="information_list">')[1:]:
+            name = re.search(r'<p class="title">(.*?)</p>', sec, re.S)
+            lines += ["", f"[{clean_ws(strip_tags(name[1]))}]" if name else ""]
+            for k, v in pairs(sec):
+                if k.startswith(("신청 시 요청하는 정보", "제출하신 서류는", "상기 일정은", "자세한 내용은 첨부파일")):
+                    continue   # 모든 공고에 붙는 안내 문구
+                lines.append(f"- {k}: {v}" if k and v and "\n" not in v else f"- {k}\n{v}" if k and v else f"- {k or v}")
+        body = "\n".join(lines).strip()
+        if len(body) < 80:   # 항목형이 아닌 공고(편집기로 쓴 글)는 본문 영역을 통째로 읽는다
+            body = (body + "\n\n" + body_text(view)).strip()
+
+        atts, stems = [], set()
+        files = h[h.find('<div class="board_file">'):] if '<div class="board_file">' in h else ""
+        for li in files.split('<li class="clear">')[1:]:
+            name = re.search(r'<a class="file_bg"[^>]*>(.*?)</a>', li, re.S)
+            href = re.search(r'href="(/afile/fileDownload/[^"]+)"', li)
+            if not name or not href:
+                continue
+            fname = clean_ws(strip_tags(name[1]))
+            stem = re.sub(r"\.[A-Za-z0-9]+$", "", fname)
+            if stem in stems:   # 같은 문서를 hwp·pdf 두 벌로 올린 경우 하나만
+                continue
+            stems.add(stem)
+            atts.append({"name": fname, "url": self.BASE + href[1]})
+        title = re.search(r'id="scrTitle">\s*<h3>(.*?)</h3>', h, re.S)
+        d = {"ntis_url": url, "source_url": "", "body": body, "attachments": atts,
+             "contact": clean_ws(f"{meta.get('담당부서', '')} {meta.get('연락처', '')}"), "body_images": body_images(view, self.BASE)}
+        if title:
+            d["title"] = clean_ws(strip_tags(title[1]))
+        if meta.get("주관기관명"):
+            d["agency"] = clean_ws(meta["주관기관명"])
+        if meta.get("접수기간"):
+            d["period_text"] = clean_ws(meta["접수기간"])
+        return d
+
+
+SITES = {s.key: s for s in (Bizinfo, BizinfoOther, BizinfoCentral, Mss, Riia, Nipa, Cbist, Cbtp, Ctp, Cistep, Cfac, Ccon, Msit, Kstartup)}
 # 지역 묶음: Discord에 지역 이름 하나로 나간다. 판정 기록(seen.json)은 사이트별로 남는다
 GROUPS = {"chungbuk": ("충북", (Cbist, Riia, Cbtp)), "chungnam": ("충남", (Ctp, Cistep, Cfac, Ccon))}
 
@@ -705,7 +823,7 @@ def collect(site, a, out: Path, date_from: str, date_to: str, known: list) -> li
         kept = []
         for r in rows:
             hit, bad, ok = match_keywords(r["title"], kw)
-            if ok:
+            if ok or r.get("keep"):   # keep: 사이트가 키워드와 상관없이 넘기라고 표시한 공고 (K-Startup의 충북·충남)
                 r["keywords"] = hit
                 kept.append(r)
             else:
@@ -766,7 +884,7 @@ def main() -> int:
     ap.add_argument("--no-attach", action="store_true")
     ap.add_argument("--no-seen", action="store_true")
     ap.add_argument("--include-closed", action="store_true")
-    ap.add_argument("--no-filter", action="store_true", help="키워드 1차 필터 끄기 (bizinfo_other)")
+    ap.add_argument("--no-filter", action="store_true", help="키워드 1차 필터 끄기 (bizinfo_other·bizinfo_central·kstartup)")
     a = ap.parse_args()
 
     key, label, classes = (a.group, *GROUPS[a.group]) if a.group else (a.site, SITES[a.site].label, (SITES[a.site],))
