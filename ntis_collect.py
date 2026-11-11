@@ -439,6 +439,10 @@ def extract_zip(path: Path) -> list[dict]:
 
 def extract_text(path: Path) -> str:
     ext = path.suffix.lower()
+    if ext in (".hwp", ".hwpx"):   # 확장자와 실제 형식이 다른 파일이 있다 (.hwpx인데 구형 HWP — 2026-11-11 필터 점검에서 발견)
+        with open(path, "rb") as f:
+            magic = f.read(4)
+        ext = ".hwp" if magic == b"\xd0\xcf\x11\xe0" else ".hwpx" if magic[:2] == b"PK" else ext
     try:
         if ext == ".pdf":
             t = extract_pdf(path)

@@ -6,6 +6,8 @@
   - 엑셀은 드라이브에서 내려받아 줄만 덧붙이고 같은 파일로 다시 올린다 → 링크가 바뀌지 않고, 사람이 고친 내용도 남는다.
   - 드라이브의 `첨부파일` 폴더 안에 공고마다 폴더를 만들어 첨부 전부를 올리고, 첨부파일 칸에 그 폴더 링크를 건다.
   - 이미 적합으로 올린 공고의 재공고는 새 줄 대신 그 줄의 마감일·링크만 고친다.
+  - 같은 폴더에 `공고내용.txt`도 넣는다 — 공고 기본 정보 + 과업지시서·제안요청서·공고문 본문 전체(잘림 없이). HWP를 못 읽는
+    프로그램(제안서 초안 작성 등)이 이 파일 하나만 읽으면 되도록. 양식·법령류는 이름만 적는다.
 
 드라이브 연결: 사용자 구글 계정의 Apps Script 웹앱(drive_webapp.gs)에 요청을 보낸다. 주소는 환경변수 DRIVE_WEBAPP_URL
 (Discord 웹훅처럼 주소 자체가 비밀). 없으면 아무것도 하지 않고 끝낸다.
@@ -33,6 +35,7 @@ import requests
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
+import ntis_collect as nc
 from discord_post import end_date, gather_docs, log
 from seen_state import same_title, title_key
 
@@ -156,14 +159,96 @@ def set_date(cell, d: dt.date | None, raw: str) -> None:
     cell.alignment = TOP
 
 
-def upload_docs(drive, it: dict, out: Path, reg: dt.date | None) -> tuple[str, int]:
-    """공고 첨부를 공고별 폴더에 올린다. 반환: (폴더 링크, 올린 개수)"""
-    got, _ = gather_docs(it, out)
-    if not got:
-        return "", 0
+TEXT_NAME = "공고내용.txt"
+TASK_DOC = re.compile(r"과업|제안\s*요청|규격|사양|RFP|내용서", re.I)
+NOTICE_DOC = re.compile(r"공고")
+EXT_ORDER = {".hwpx": 0, ".hwp": 1, ".docx": 2, ".pdf": 3, ".xlsx": 4, ".txt": 5}   # 같은 문서가 여러 형식이면 앞의 것을 읽는다 (PDF는 띄어쓰기가 깨진다)
+
+
+def prespec_docs(it: dict, out: Path) -> list[tuple[dict, Path]]:
+    """사전규격을 거친 나라장터 본공고는 첨부에 공고서만 있는 일이 많다 → 과업 문서가 없으면 사전규격의 규격서를 받아 온다."""
+    no = (it.get("raw") or {}).get("bfSpecRgstNo") or ""
+    key = os.environ.get("G2B_SERVICE_KEY", "")
+    if not no or not key or any(TASK_DOC.search(a.get("name", "")) for a in it.get("attachments", [])):
+        return []
+    try:
+        import urllib.parse
+
+        import g2b_prespec_collect as pre
+        r = pre.session.get(pre.URL, params={"serviceKey": urllib.parse.unquote(key) if "%" in key else key, "pageNo": 1, "numOfRows": 10,
+                                             "inqryDiv": 2, "bfSpecRgstNo": no, "type": "json"}, timeout=60)
+        rows = r.json()["response"]["body"].get("items") or []
+        if not rows:
+            return []
+        d = pre.normalize(rows[-1])
+        pre.download_docs(d, out / "bundle" / re.sub(r"[^0-9A-Za-z_-]", "_", it["uid"]) / "prespec")
+        return [({"name": "(사전규격) " + a["name"]}, Path(a["path"])) for a in d["attachments"] if a.get("path")]
+    except Exception as e:  # noqa: BLE001 — 못 받아도 본공고 첨부만으로 진행
+        log(f"  ! 사전규격 문서 받기 실패 {no}: {str(e)[:120]}")
+        return []
+
+
+def notice_text(it: dict, r: dict, got: list[tuple[dict, Path]], missed: list[dict]) -> str:
+    """공고 한 건의 내용을 txt 하나로: 기본 정보 → 첨부 목록(수록 상태) → 공고 본문 → 문서별 전문.
+    과업지시서·제안요청서를 앞에, 양식·법령류는 이름만. 판정용 추출의 길이 상한은 여기서는 쓰지 않는다."""
+    cap, zcap = nc.MAX_TEXT_PER_FILE, nc.ZIP_MAX_DOCS
+    nc.MAX_TEXT_PER_FILE, nc.ZIP_MAX_DOCS = 5_000_000, 100
+    try:
+        status: list[tuple[str, str]] = []           # (첨부 이름, 수록 상태)
+        docs: list[tuple[int, str, str]] = []        # (순서, 표시 이름, 본문)
+        seen_stem: dict[str, str] = {}
+        for att, p in sorted(got, key=lambda x: EXT_ORDER.get(x[1].suffix.lower(), 9)):
+            name = att.get("name") or p.name
+            stem = re.sub(r"\s+", "", Path(name).stem)
+            if p.suffix.lower() not in nc.TEXT_EXTS | {".zip"}:
+                status.append((name, "글자 추출 대상 아님 (원본 파일 참조)"))
+                continue
+            if nc.is_form_attachment(name) and not TASK_DOC.search(name):
+                status.append((name, "이름만 (양식·법령·공통서류)"))
+                continue
+            if stem in seen_stem:
+                status.append((name, f"생략 — '{seen_stem[stem]}'과 같은 문서의 다른 형식"))
+                continue
+            a = {"name": name}
+            nc.extract_attachment(a, p)
+            parts = [(label, t, form) for label, t, form in nc.attachment_docs(a) if not nc.FAILED_TEXT.match(t)]
+            body = [(label, t) for label, t, form in parts if not form and sum('가' <= c <= '힣' for c in t) >= 100]   # 스캔본은 쪽 번호만 나온다
+            if not body:
+                status.append((name, "이름만 (양식·법령·공통서류)" if parts and all(f for _, _, f in parts) else "읽지 못함 (스캔본·이미지·암호화 — 원본 파일 참조)"))
+                continue
+            seen_stem[stem] = name
+            skipped = len(parts) - len(body)
+            status.append((name, f"전체 수록 ({sum(len(t) for _, t in body):,}자)" + (f", 안의 양식 {skipped}개는 생략" if skipped else "")))
+            for label, t in body:
+                docs.append((0 if TASK_DOC.search(label) else 1 if NOTICE_DOC.search(label) else 2, label, t))
+        status += [(a.get("name", "?"), "받지 못함 (공고 원문에서 직접 받아야 함)") for a in missed]
+    finally:
+        nc.MAX_TEXT_PER_FILE, nc.ZIP_MAX_DOCS = cap, zcap
+    make = (r.get("card") or {}).get("make") or ""
+    head = [f"# {it.get('title', '')}", "",
+            f"- 공고 링크: {it.get('ntis_url', '')}",
+            f"- 기관: {' / '.join(x for x in [it.get('dept'), it.get('agency')] if x) or '-'}",
+            f"- 등록일: {it.get('announce_date') or '-'}  |  마감: {it.get('end') or '-'}",
+            f"- 예산: {r.get('budget') or it.get('budget') or '-'}"]
+    if make:
+        head.append(f"- 만들 것: {make}")
+    if r.get("conditions"):
+        head += ["- 핵심 자격·조건 (판정 때 정리한 요약 — 정확한 문구는 아래 원문 확인):"] + [f"  - {c}" for c in r["conditions"]]
+    lines = head + ["", "## 첨부 목록", ""] + ([f"- {n} — {st}" for n, st in status] or ["- (첨부 없음)"]) + [""]
+    if (it.get("body") or "").strip():
+        lines += ["## 공고 본문", "", it["body"].strip(), ""]
+    for _, label, t in sorted(docs, key=lambda x: x[0]):
+        lines += [f"## 첨부: {label}", "", t, ""]
+    return "\n".join(lines)
+
+
+def upload_docs(drive, it: dict, r: dict, out: Path, reg: dt.date | None) -> tuple[str, int]:
+    """공고 첨부와 공고내용.txt를 공고별 폴더에 올린다. 반환: (폴더 링크, 올린 첨부 개수 — txt 제외)"""
+    got, missed = gather_docs(it, out)
+    got += prespec_docs(it, out)
     folder = safe_name((f"{reg:%y%m%d} " if reg else "") + it.get("title", it["uid"]), 70)
     url = drive.folder(folder)
-    n, used = 0, set()
+    n, used = 0, {TEXT_NAME}
     for att, p in got:
         name = safe_name(att.get("name") or p.name, 150)
         if name in used or p.stat().st_size > MAX_UPLOAD:
@@ -175,6 +260,13 @@ def upload_docs(drive, it: dict, out: Path, reg: dt.date | None) -> tuple[str, i
             n += 1
         except Exception:  # noqa: BLE001 — 한 파일이 실패해도 줄은 남긴다 (오류는 call()이 이미 기록)
             pass
+    try:
+        txt = out / "bundle" / re.sub(r"[^0-9A-Za-z_-]", "_", it["uid"]) / TEXT_NAME
+        txt.parent.mkdir(parents=True, exist_ok=True)
+        txt.write_text(notice_text(it, r, got, missed), "utf-8")
+        drive.upload(folder, TEXT_NAME, txt)
+    except Exception as e:  # noqa: BLE001
+        log(f"  ! {TEXT_NAME} 만들기·올리기 실패: {str(e)[:150]}")
     return url, n
 
 
@@ -216,11 +308,9 @@ def main() -> int:
         if make or not old:
             ws.cell(n, 4).value = make
             ws.cell(n, 4).alignment = WRAP
-        folder, cnt = upload_docs(drive, it, out, reg)
-        if cnt:
-            set_link(ws.cell(n, 5), f"첨부 {cnt}개", folder)
-        elif not old:   # 받지 못한 첨부(기업마당 등)는 공고 원문에서
-            set_link(ws.cell(n, 5), "원문에서 받기", link)
+        folder, cnt = upload_docs(drive, it, r, out, reg)
+        if cnt or not old:   # 첨부를 못 받은 공고(기업마당 등)도 폴더에 공고내용.txt는 들어 있다
+            set_link(ws.cell(n, 5), f"첨부 {cnt}개" if cnt else "공고내용만", folder)
         ws.cell(n, 5).alignment = TOP
         rows[link] = n
         added, updated = added + (not old), updated + bool(old)
