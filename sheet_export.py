@@ -92,8 +92,11 @@ class Drive:
     def upload(self, folder: str, name: str, path: Path, replace: bool = False) -> str:
         """파일 링크를 돌려준다. 같은 이름이 이미 있으면 그대로 두고, replace면 내용을 바꾼다."""
         mime = MIME.get(path.suffix.lower()) or mimetypes.guess_type(name)[0] or "application/octet-stream"   # 드라이브 미리보기용
-        return self.call(action="upload", folder=folder, name=name, mime=mime, replace=replace,
-                         b64=base64.b64encode(path.read_bytes()).decode())["url"]
+        d = self.call(action="upload", folder=folder, name=name, mime=mime, replace=replace,
+                      b64=base64.b64encode(path.read_bytes()).decode())
+        if replace and d.get("existed"):
+            log(f"  ! {name}: 웹앱이 옛 버전이라 내용을 바꾸지 못함(기존 파일 유지) — drive_webapp.gs를 새 버전으로 재배포해야 함")
+        return d["url"]
 
 
 class LocalDrive:
@@ -175,6 +178,14 @@ NOTICE_DOC = re.compile(r"공고")
 EXT_ORDER = {".hwpx": 0, ".hwp": 1, ".docx": 2, ".pdf": 3, ".xlsx": 4, ".txt": 5}   # 같은 문서가 여러 형식이면 앞의 것을 읽는다 (PDF는 띄어쓰기가 깨진다)
 
 
+def _pdf_pages(path: Path) -> int:
+    try:
+        from pypdf import PdfReader
+        return len(PdfReader(str(path)).pages)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 def prespec_docs(it: dict, out: Path) -> list[tuple[dict, Path]]:
     """사전규격을 거친 나라장터 본공고는 첨부에 공고서만 있는 일이 많다 → 과업 문서가 없으면 사전규격의 규격서를 받아 온다."""
     no = (it.get("raw") or {}).get("bfSpecRgstNo") or ""
@@ -223,6 +234,8 @@ def notice_text(it: dict, r: dict, got: list[tuple[dict, Path]], missed: list[di
             nc.extract_attachment(a, p)
             parts = [(label, t, form) for label, t, form in nc.attachment_docs(a) if not nc.FAILED_TEXT.match(t)]
             body = [(label, t) for label, t, form in parts if not form and sum('가' <= c <= '힣' for c in t) >= 100]   # 스캔본은 쪽 번호만 나온다
+            if body and p.suffix.lower() == ".pdf" and sum('가' <= c <= '힣' for _, t in body for c in t) < 50 * _pdf_pages(p):
+                body = []   # 화면 캡처로 만든 PDF(매뉴얼 등): 쪽 번호와 그림 속 번호만 글자로 나온다
             if not body:
                 status.append((name, "이름만 (양식·법령·공통서류)" if parts and all(f for _, _, f in parts) else "읽지 못함 (스캔본·이미지·암호화 — 원본 파일 참조)"))
                 continue
