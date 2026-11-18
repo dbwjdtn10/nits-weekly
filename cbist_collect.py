@@ -117,8 +117,14 @@ def download_attachment(att: dict, dest_dir: Path) -> Path | None:
     path = dest_dir / safe
     if path.exists() and path.stat().st_size > 0:
         return path
-    r = session.get(att["url"], timeout=120, stream=True)
+    hdrs = att.get("headers")   # Referer가 없으면 파일을 내주지 않는 사이트 (스마트공장)
+    if att.get("post"):   # 내려받기 단추가 POST 폼인 사이트 (한국전파진흥협회)
+        r = session.post(att["url"], data=att["post"], headers=hdrs, timeout=120, stream=True)
+    else:
+        r = session.get(att["url"], headers=hdrs, timeout=120, stream=True)
     r.raise_for_status()
+    if "application/json" in r.headers.get("Content-Type", ""):   # 파일 대신 오류 문구가 온 경우 ("잘못된 접근입니다")
+        raise ValueError(f"파일 대신 오류 응답: {r.text[:80]}")
     size, too_big = 0, False
     with open(path, "wb") as f:
         for chunk in r.iter_content(1 << 16):

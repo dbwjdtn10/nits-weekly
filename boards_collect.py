@@ -16,9 +16,20 @@
   kstartup: K-Startup(창업진흥원) 사업공고 모집중  https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do — 행사·교육 분야 제외, bizinfo_keywords.txt로 1차 필터
   cfac    : 천안문화재단 모집공고·입찰공고  https://www.cfac.or.kr
   ccon    : 충남콘텐츠진흥원(옛 충남정보문화산업진흥원) 사업공고·입찰공고  https://ccon.kr
+  motie   : 산업통상부 사업공고  https://www.motir.go.kr/kor/article/ATCL2826a2625
+  moe     : 교육부 사업공고·입찰알림  https://www.moe.go.kr
+  mois    : 행정안전부 알립니다  https://www.mois.go.kr
+  kiat    : 한국산업기술진흥원 사업공고·입찰공고  https://www.kiat.or.kr
+  nia     : 한국지능정보사회진흥원 입찰공고·공지사항  https://www.nia.or.kr
+  rapa    : 한국전파진흥협회 공지사항·입찰공고  https://www.rapa.or.kr
+  smartfactory : 스마트공장 사업관리시스템 사업공고  https://www.smart-factory.kr
+  gcube   : 경북문화재단 콘텐츠진흥원 공지사항  https://gcube.or.kr:1021
+  ucepc   : 울산콘텐츠기업지원센터 사업공고·공지사항  https://www.ucepc.or.kr
 
-지역 묶음(--group): 여러 사이트를 한 폴더에 모아 Discord에 지역 하나로 나가게 한다.
+묶음(--group): 여러 사이트를 한 폴더에 모아 Discord에 이름 하나로 나가게 한다.
   chungbuk : cbist + riia + cbtp      chungnam : ctp + cistep + cfac + ccon
+  agency   : motie + moe + mois + kiat + nia + rapa + smartfactory + gcube + ucepc  (Discord 제목 '부처·기관')
+             부처 게시판은 bizinfo_keywords.txt, 입찰 게시판은 g2b_keywords.txt로 공고명 1차 필터 (경북·울산은 필터 없음)
   묶음 안에서 한 사이트가 실패해도 나머지는 수집하고, 실패한 사이트는 announcements.json의 failed에 적는다.
 
 지정 기간(기본: 지난주 월~일)에 등록된 공고의 상세 본문과 첨부를 내려받아
@@ -52,7 +63,7 @@ from cbist_collect import download_attachment
 from g2b_collect import load_keywords, match_keywords
 from ntis_collect import (
     attachment_log, attachment_sections, clean_ws, dday, default_range, extract_attachment, get, is_form_attachment, log,
-    make_brief, now_kst, session, strip_tags,
+    make_brief, now_kst, post, session, strip_tags,
 )
 from seen_state import load_seen, same_title, title_key
 
@@ -706,9 +717,381 @@ class Kstartup:
         return d
 
 
-SITES = {s.key: s for s in (Bizinfo, BizinfoOther, BizinfoCentral, Mss, Riia, Nipa, Cbist, Cbtp, Ctp, Cistep, Cfac, Ccon, Msit, Kstartup)}
-# 지역 묶음: Discord에 지역 이름 하나로 나간다. 판정 기록(seen.json)은 사이트별로 남는다
-GROUPS = {"chungbuk": ("충북", (Cbist, Riia, Cbtp)), "chungnam": ("충남", (Ctp, Cistep, Cfac, Ccon))}
+# =========================================================================== 부처·기관 묶음 (--group agency)
+# 회사 문서 '정부과제 서칭 사이트&담당자'에 있는 나머지 9곳. 채용·포상·입법예고가 섞인 부처 게시판과 나라장터에도 올라오는
+# 입찰 게시판이 많아, 게시판마다 공고명 1차 필터를 건다 (사업·공지 게시판: bizinfo_keywords.txt / 입찰 게시판: g2b_keywords.txt).
+BIZ_KW, BID_KW = "bizinfo_keywords.txt", "g2b_keywords.txt"
+# 부처 게시판에 섞여 올라오는, 신청할 수 있는 공고가 아닌 글
+GOV_SKIP = re.compile(RESULT_TITLE.pattern + r"|결과\s*공개|임용|채용|포상|공개\s*검증|입법\s*예고|행정\s*예고|시험\s*(시행|일정|계획)|합격"
+                      r"|인사\s*발령|공시\s*송달|설립\s*허가")
+
+
+def uniq_docs(atts: list[dict]) -> list[dict]:
+    """같은 문서를 hwp·hwpx·pdf 여러 벌로 올린 글은 문서마다 하나만 남긴다 (먼저 나온 것)."""
+    out, stems = [], set()
+    for att in atts:
+        stem = re.sub(r"\.[A-Za-z0-9]+$", "", att["name"])
+        if stem not in stems:
+            stems.add(stem)
+            out.append(att)
+    return out
+
+
+def board_row(site, uid: str, title: str, reg: str, form: str, **kw) -> dict:
+    """목록 한 줄. 제목 끝의 폭 없는 공백·말줄임표는 떼어 낸다 (중복 비교가 깨진다)."""
+    title = clean_ws(html.unescape(strip_tags(title))).replace("​", "").strip()
+    return {"uid": uid, "title": title, "reg_date": dash_date(reg), "start": "", "end": "", "status": "", "period_text": "",
+            "dept": site.DEPT, "agency": site.label, "form": form, **kw}
+
+
+class Motie:
+    """산업통상부 사업공고 (www.motie.go.kr은 www.motir.go.kr로 넘어간다). R&D 과제 공고는 NTIS에, 지원사업은 기업마당에도
+    올라오므로 --dedupe로 겹치는 글이 빠진다 (2026-11-11 대조: 한 달 14건 중 기업 대상 글은 모두 다른 소스에 있었다)."""
+    key, label, DEPT = "motie", "산업통상부", "산업통상부"
+    KEYWORDS = BIZ_KW
+    SKIP_TITLE = GOV_SKIP
+    BASE = "https://www.motir.go.kr"
+    BOARD = "ATCL2826a2625"
+
+    def list_page(self, page: int) -> list[dict]:
+        h = get(f"{self.BASE}/kor/article/{self.BOARD}", params={"pageIndex": page, "rowPageC": 30}, headers=UA_HEADERS).text
+        rows = []
+        for tr in re.findall(r"<tr>(.*?)</tr>", h[h.find("board-list"):], re.S):
+            m = re.search(rf'href="/kor/article/{self.BOARD}/(\d+)/view[^"]*"[^>]*>(.*?)</a>', tr, re.S)
+            reg = re.search(r"<td>\s*(\d{4}-\d{2}-\d{2})\s*</td>", tr)
+            if m:
+                rows.append(board_row(self, f"motie-{m[1]}", m[2], reg[1] if reg else "", "사업공고"))
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        url = f"{self.BASE}/kor/article/{self.BOARD}/{row['uid'].split('-', 1)[1]}/view"
+        h = get(url, headers=UA_HEADERS).text
+        i = h.find('class="detail-cont"')
+        frag = cut(h[h.find(">", i) + 1:], ("<!-- //게시판 상세보기", '<div class="board-button"')) if i >= 0 else ""
+        dept = re.search(r"<em>담당부서</em>\s*<span>(.*?)</span>", h, re.S)
+        tel = re.search(r"<em>연락처</em>\s*<span>(.*?)</span>", h, re.S)
+        atts = [{"name": clean_ws(html.unescape(n)), "url": self.BASE + href}
+                for href, n in re.findall(r'<a href="(/attach/down/[^"]+)" title="(.*?) 다운로드"', h)]
+        return {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": uniq_docs(atts),
+                "agency": f"{self.label} {clean_ws(strip_tags(dept[1]))}".strip() if dept else self.label,
+                "contact": clean_ws(strip_tags(tel[1])) if tel else "", "body_images": body_images(frag, self.BASE)}
+
+
+class Moe:
+    """교육부 사업공고·입찰알림. 위탁·운영기관 공모가 대부분이고 입찰알림은 거의 멈춰 있다(입찰은 나라장터로 나간다)."""
+    key, label, DEPT = "moe", "교육부", "교육부"
+    KEYWORDS = BIZ_KW
+    SKIP_TITLE = GOV_SKIP
+    BASE = "https://www.moe.go.kr"
+    BOARDS = (("72761", "020502", "사업공고", BIZ_KW), ("72762", "020503", "입찰알림", BID_KW))
+
+    def list_page(self, page: int) -> list[dict]:
+        rows = []
+        for board, menu, form, kw in self.BOARDS:
+            h = get(f"{self.BASE}/boardCnts/listRenew.do", params={"boardID": board, "m": menu, "s": "moe", "page": page},
+                    headers=UA_HEADERS).text
+            for tr in re.findall(r"<tr>(.*?)</tr>", h[h.find('data-type="list"'):], re.S):
+                m = re.search(r"goView\('(\d+)',\s*'(\d+)',\s*'\d+',\s*[^,]+,\s*'(\w*)'[^>]*>(.*?)</a>", tr, re.S)
+                reg = re.search(r"<td>\s*(\d{4}-\d{2}-\d{2})\s*</td>", tr)
+                if m:
+                    rows.append(board_row(self, f"moe-{m[1]}-{m[2]}", m[4], reg[1] if reg else "", form,
+                                          kwfile=kw, menu=menu, st=m[3] or "W"))
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        _, board, seq = row["uid"].split("-")
+        url = (f"{self.BASE}/boardCnts/viewRenew.do?boardID={board}&boardSeq={seq}&lev=0&searchType=null"
+               f"&statusYN={row['st']}&page=1&s=moe&m={row['menu']}&opType=N")
+        h = get(url, headers=UA_HEADERS).text
+        i = h.find('class="boardRenewArea"')
+        frag = cut(h[h.find(">", i) + 1:], ('<div data-board="foot"', '<div data-board="after"', "</section>")) if i >= 0 else ""
+        dept = re.search(r"담당부서</th>\s*<td>(.*?)</td>", h, re.S)
+        atts = [{"name": re.sub(r"\s*\[[^\]]*\]\s*$", "", clean_ws(html.unescape(n))), "url": self.BASE + html.unescape(href)}
+                for n, href in re.findall(r'<li>\s*([^<]+?)\s*<a class="btnBorder" href="(/boardCnts/fileDown\.do\?[^"]+)"', h)]
+        return {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": uniq_docs(atts), "contact": "",
+                "agency": f"{self.label} {clean_ws(strip_tags(dept[1]))}".strip() if dept else self.label,
+                "body_images": body_images(frag, self.BASE)}
+
+
+class Mois:
+    """행정안전부 '알립니다' — 사업공고·입찰 전용 게시판이 없어 여기 한 곳에 채용·포상·입법예고와 함께 올라온다
+    (한 달 87건 중 기업 대상 7건 안팎). 그래서 GOV_SKIP과 키워드 필터를 둘 다 건다."""
+    key, label, DEPT = "mois", "행정안전부", "행정안전부"
+    KEYWORDS = BIZ_KW
+    SKIP_TITLE = GOV_SKIP
+    BASE = "https://www.mois.go.kr"
+    BBS = "BBSMSTR_000000000006"
+
+    def list_page(self, page: int) -> list[dict]:
+        h = get(f"{self.BASE}/frt/bbs/type013/commonSelectBoardList.do", params={"bbsId": self.BBS, "pageIndex": page},
+                headers=UA_HEADERS).text
+        rows = []
+        for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", h[h.find("table_style1"):], re.S):
+            m = re.search(r'commonSelectBoardArticle\.do[^"]*nttId=(\d+)[^"]*"[^>]*>(.*?)</a>', tr, re.S)
+            reg = re.search(r"(\d{4}\.\s*\d{1,2}\.\s*\d{1,2})\.?\s*</td>", tr)
+            if m:
+                rows.append(board_row(self, f"mois-{m[1]}", m[2], reg[1].replace(" ", "") if reg else "", "알립니다"))
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        url = f"{self.BASE}/frt/bbs/type013/commonSelectBoardArticle.do?bbsId={self.BBS}&nttId={row['uid'].split('-', 1)[1]}"
+        h = get(url, headers=UA_HEADERS).text
+        i = h.find('<div class="desc">')
+        frag = cut(h[i:], ('<dl class="download">', "<!-- //컨텐츠 영역")) if i >= 0 else ""
+        who = re.search(r"<span>작성자</span>\s*:\s*([^<]*)", h)
+        atts = [{"name": re.sub(r"\s*\[[^\]]*\]\s*$", "", clean_ws(html.unescape(strip_tags(n)))), "url": self.BASE + html.unescape(href)}
+                for href, n in re.findall(r'<a href="(/cmm/fms/FileDown\.do\?[^"]+)">(.*?)</a>', h, re.S)]
+        parts = [clean_ws(x) for x in (who[1].split("/") if who else [])]
+        return {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": uniq_docs(atts),
+                "agency": f"{self.label} {parts[0]}".strip() if parts else self.label,
+                "contact": " ".join(parts[1:]), "body_images": body_images(frag, self.BASE)}
+
+
+class Kiat:
+    """한국산업기술진흥원 사업공고·입찰공고. 목록은 화면에 없고 POST로 받는 조각에 있다. 입찰은 나라장터에도 올라온다."""
+    key, label, DEPT = "kiat", "한국산업기술진흥원", "산업통상부"
+    KEYWORDS = BIZ_KW
+    SKIP_TITLE = GOV_SKIP
+    BASE = "https://www.kiat.or.kr"
+    BOARDS = (("90", "b159c9dac684471b87256f1e25404f5e", "사업공고", BIZ_KW),
+              ("77", "1e29209309434ec29095728c6f1356c7", "입찰공고", BID_KW))
+
+    def list_page(self, page: int) -> list[dict]:
+        rows = []
+        for board, menu, form, kw in self.BOARDS:
+            h = post(f"{self.BASE}/front/board/boardContentsListAjax.do",
+                     {"miv_pageNo": page, "miv_pageSize": 30, "board_id": board, "MenuId": menu, "mode": "W", "searchkey": "T",
+                      "searchtxt": ""}, headers=UA_HEADERS).text
+            for tr in re.findall(r"<tr\b[^>]*>(.*?)</tr>", h, re.S):
+                m = re.search(r"contentsView\('([0-9a-f]{32})'\)\"[^>]*>(.*?)</a>", tr, re.S)
+                if not m:
+                    continue
+                cells = {k: clean_ws(strip_tags(v)) for k, v in re.findall(r'<td class="[^"]*td_(\w+)[^"]*"[^>]*>(.*?)</td>', tr, re.S)}
+                start, end = period(cells.get("app_term", ""))
+                rows.append(board_row(self, f"kiat-{m[1]}", m[2], cells.get("reg_date", ""), form, kwfile=kw, board=board,
+                                      menu=menu, start=start, end=end, period_text=cells.get("app_term", "")))
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        url = (f"{self.BASE}/front/board/boardContentsView.do?board_id={row['board']}"
+               f"&contents_id={row['uid'].split('-', 1)[1]}&MenuId={row['menu']}")
+        h = get(url, headers=UA_HEADERS).text
+        i = h.find('class="viewTypeA_contents"')
+        frag = cut(h[h.find(">", i) + 1:], ("<!--// 내용 -->", '<div class="btnWrap"', "<!-- answer_area", "<!--// view_area")) if i >= 0 else ""
+        dept = re.search(r"담당부서</th>\s*<td[^>]*>(.*?)</td>", h, re.S)
+        tel = re.search(r"연락처</th>\s*<td[^>]*>(.*?)</td>", h, re.S)
+        atts = [{"name": re.sub(r"\(\s*[\d.,]+\s*[KMG]?B\)\s*$", "", clean_ws(html.unescape(strip_tags(n)))), "url": self.BASE + href}
+                for href, n in re.findall(r'<a href="(/commonfile/fileidDownLoad\.do\?file_id=\w+)"[^>]*>(.*?)</a>', h, re.S)]
+        return {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": uniq_docs(atts),
+                "agency": f"{self.label} {clean_ws(strip_tags(dept[1]))}".strip() if dept else self.label,
+                "contact": clean_ws(strip_tags(tel[1])) if tel else "", "body_images": body_images(frag, self.BASE)}
+
+
+class Nia:
+    """한국지능정보사회진흥원 입찰공고·공지사항 (사업공고 전용 게시판은 없다). 입찰공고의 절반은 '[조달입찰공고]' —
+    나라장터 공고를 그대로 옮겨 실은 글(본문에 나라장터 공고번호가 있다)이라 나라장터 수집기에 맡기고 여기서는 뺀다.
+    나머지([입찰공고]·[사전규격공개])는 --dedupe로 나라장터·사전규격 수집분과 겹치는 글이 빠진다."""
+    key, label, DEPT = "nia", "한국지능정보사회진흥원", "과학기술정보통신부"
+    KEYWORDS = BIZ_KW
+    SKIP_TITLE = re.compile(GOV_SKIP.pattern + r"|^\s*\[조달입찰공고")
+    BASE = "https://www.nia.or.kr"
+    BOARDS = (("78336", "입찰공고", BID_KW), ("99835", "공지사항", BIZ_KW))
+
+    def list_page(self, page: int) -> list[dict]:
+        rows = []
+        for board, form, kw in self.BOARDS:
+            h = get(f"{self.BASE}/site/nia_kor/ex/bbs/List.do", params={"cbIdx": board, "pageIndex": page}, headers=UA_HEADERS).text
+            seg = h.split('<div class="board_type01">', 1)
+            for cls, li in re.findall(r'<li class="([^"]*)">(.*?)</li>', seg[1] if len(seg) > 1 else "", re.S):
+                m = re.search(r"doBbsFView\('(\d+)','(\d+)'", li)
+                subj = re.search(r'<span class="subject[^"]*">(.*?)</span>\s*<span class="src">', li, re.S)
+                reg = re.search(r'<span class="src">\s*<em>([\d.]+)</em>', li)
+                if m and subj:
+                    title = re.sub(r"<em\b.*?</em>", " ", subj[1], flags=re.S)   # 첨부·새 글 표시
+                    rows.append(board_row(self, f"nia-{m[1]}-{m[2]}", title, reg[1] if reg else "", form, kwfile=kw,
+                                          pinned="noti" in cls))
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        _, board, no = row["uid"].split("-")
+        url = f"{self.BASE}/site/nia_kor/ex/bbs/View.do?cbIdx={board}&bcIdx={no}&parentSeq={no}"
+        h = get(url, headers=UA_HEADERS).text
+        i = h.find('<div class="con_area">')
+        frag = cut(h[i:], ('<div class="sns_area"', '<div class="buttonArea_type01"', '<div class="view_pn"')) if i >= 0 else ""
+        who = re.search(r'<span class="writer">(.*?)</span>', h, re.S)
+        team = [clean_ws(x) for x in re.findall(r"<em>(.*?)</em>", who[1], re.S)] if who else []
+        atts = [{"name": clean_ws(html.unescape(n)), "url": self.BASE + html.unescape(href)}
+                for href, n in re.findall(r'<span class="file_nm"><a href="(/common/board/Download\.do\?[^"]+)"[^>]*>(.*?)</a>', h, re.S)]
+        return {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": uniq_docs(atts), "contact": " ".join(team),
+                "agency": f"{self.label} {team[-1]}".strip() if team else self.label, "body_images": body_images(frag, self.BASE)}
+
+
+class Rapa:
+    """한국전파진흥협회 공지사항·입찰공고. 목록은 POST로 받는 조각에 있고, 공지사항은 고정 글 20여 건이 앞 3쪽을 채운 뒤에야
+    새 글이 나오므로 MIN_PAGES만큼은 끝까지 읽는다. 목록 제목은 50자쯤에서 잘려 상세에서 전체 제목을 다시 읽는다."""
+    key, label, DEPT = "rapa", "한국전파진흥협회", "과학기술정보통신부"
+    KEYWORDS = BIZ_KW
+    SKIP_TITLE = GOV_SKIP
+    BASE = "https://www.rapa.or.kr"
+    BOARDS = (("bd04", "1", "공지사항", BIZ_KW), ("bd07", "2", "입찰공고", BID_KW))
+    MIN_PAGES, PAGES = 5, 8
+
+    def list_page(self, page: int) -> list[dict]:
+        rows = []
+        for board, divn, form, kw in self.BOARDS:
+            h = post(f"{self.BASE}/ft/ny/{board}/addList.do",
+                     {"pageIndex": page, "boardDivn": divn, "boardCd": board, "searchCondition": "0", "searchKeyword": ""},
+                     headers=UA_HEADERS).text
+            for attrs, tr in re.findall(r"<tr\b([^>]*)>(.*?)</tr>", h, re.S):
+                m = re.search(r"fncPageView\('(\d+)'", attrs)
+                subj = re.search(r'<td class="subject">(.*?)</td>', tr, re.S)
+                reg = re.search(r"<td>\s*(\d{4}\.\d{2}\.\d{2})\s*</td>", tr)
+                if m and subj:
+                    rows.append(board_row(self, f"rapa-{board}-{m[1]}", re.sub(r"\.{3}\s*$", "", clean_ws(strip_tags(subj[1]))),
+                                          reg[1] if reg else "", form, kwfile=kw, pinned="notice" in attrs))
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        _, board, seq = row["uid"].split("-")
+        url = f"{self.BASE}/ft/ny/{board}/view.do?boardSeq={seq}"
+        h = get(url, headers=UA_HEADERS).text
+        title = re.search(r'<tr class="board_row_tit">.*?<strong>(.*?)</strong>', h, re.S)
+        i = h.find('<div class="text_area">')
+        frag = cut(h[i:], ("<!-- //board", '<div class="btn_area">')) if i >= 0 else ""
+        atts = [{"name": clean_ws(html.unescape(strip_tags(n))), "url": f"{self.BASE}{path}",
+                 "post": {"boardSeq": seq, "atchFileId": fid, "fileSn": sn, "streFileNm": stre}}
+                for path, fid, sn, stre, n in re.findall(
+                    r"fncFileDown\('([^']+)','([^']+)','(\d+)','([^']+)'\);return false;\">(.*?)</a>", h, re.S)]
+        d = {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": uniq_docs(atts), "contact": "",
+             "body_images": body_images(frag, self.BASE)}
+        if title:
+            d["title"] = clean_ws(html.unescape(strip_tags(title[1])))
+        return d
+
+
+class SmartFactory:
+    """스마트제조혁신추진단(스마트공장 사업관리시스템) 사업공고. 화면이 통째로 스크립트라 공개 문서가 없는 내부 API로 읽는다
+    — 사이트가 개편되면 주소가 바뀔 수 있다. 같은 공고가 세부공고마다 한 줄씩 나와 공고 번호로 묶는다."""
+    key, label, DEPT = "smartfactory", "스마트제조혁신추진단", "중소벤처기업부"
+    KEYWORDS = BIZ_KW
+    SKIP_TITLE = RESULT_TITLE
+    BASE = "https://www.smart-factory.kr"
+    API = f"{BASE}/usr/bg/ba/ma/bsnsPbanc"
+    JSON_HEADERS = {**UA_HEADERS, "Accept": "application/json", "Origin": BASE, "Referer": f"{BASE}/usr/bg/ba/ma/bsnsPbanc"}
+
+    def _api(self, url: str, body: dict) -> dict:
+        return post(url, None, json=body, headers=self.JSON_HEADERS).json()
+
+    def list_page(self, page: int) -> list[dict]:
+        data = self._api(f"{self.API}/selectBsnsPbancPage.do",
+                         {"key": "list", "bizYr": "", "bizClsfYrNm": "", "dtlPbancNm": "", "rcptStts": "", "ordrSe": "REG",
+                          "currentPage": page, "showPage": 30})
+        rows, seen = [], set()
+        for p in data.get("pbancList") or []:
+            if p["pbancId"] in seen:
+                continue
+            seen.add(p["pbancId"])
+            start, end = period(p.get("rcptYmdDa2001") or "")
+            rows.append(board_row(self, f"sf-{p['pbancId']}", p.get("pbancNm") or "", p.get("pbancYmd") or "", "사업공고",
+                                  start=start, end=end, period_text=clean_ws(p.get("rcptYmdDa2001") or ""),
+                                  status="종료" if str(p.get("rcptStts")) == "3" else "", sn=p.get("pbancSn") or 1,
+                                  program=p.get("bizClsfYrNm") or ""))
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        pid = row["uid"].split("-", 1)[1]
+        info = self._api(f"{self.API}/selectBsnsPbancDtlPage.do", {"key": "info", "pbancId": pid, "pbancSn": row["sn"]}).get("pbancInfo") or {}
+        frag = info.get("pbancCn") or ""
+        atts = []
+        if info.get("atchFileId"):
+            files = self._api(f"{self.BASE}/files/selectTmpltAtchList.do",
+                              {"tmpltType": 0, "tmpltDesignType": "1", "singleOnlyRead": "Y", "atchFileId": info["atchFileId"],
+                               "pbancId": pid, "pbancSn": row["sn"], "upDocTypeCd": "F00276"}).get("fileList") or []
+            atts = [{"name": clean_ws(f.get("orginalFileNm") or f"첨부{f.get('atchFileSn')}"),
+                     "url": f"{self.BASE}/file/pdfFileDownload.do?atchFileId={f['atchFileId']}&atchFileSn={f['atchFileSn']}",
+                     "headers": {"Referer": self.JSON_HEADERS["Referer"]}}   # 없으면 "잘못된 접근입니다"만 온다
+                    for f in files if f.get("atchFileId") and f.get("delYn") != "Y"]
+        return {"ntis_url": f"{self.API}Dtl?pbancId={pid}&pbancSn={row['sn']}", "source_url": "",
+                "body": "\n".join(x for x in (info.get("pbancNo") or "", body_text(frag)) if x), "attachments": atts,
+                "contact": "", "body_images": body_images(frag, self.BASE)}
+
+
+class Gcube:
+    """경북문화재단 콘텐츠진흥원 공지사항 (모집공고·입찰공고가 함께 올라온다). 1021 포트로만 열리고 글자는 EUC-KR이다.
+    고정 글 20건 가까이가 매 쪽 맨 위에 되풀이된다. 새 글이 한 달 0~3건이라 키워드 필터는 걸지 않는다."""
+    key, label, DEPT = "gcube", "경북문화재단 콘텐츠진흥원", "경상북도"
+    KEYWORDS = ""
+    SKIP_TITLE = GOV_SKIP
+    BASE = "https://gcube.or.kr:1021"
+    LIST = f"{BASE}/home/sub1/sub1.asp"
+
+    def _html(self, params: dict) -> str:
+        return get(self.LIST, params=params, headers=UA_HEADERS).content.decode("cp949", "replace")
+
+    def list_page(self, page: int) -> list[dict]:
+        rows = []
+        for cls, tr in re.findall(r"<tr([^>]*)>(.*?)</tr>", self._html({"bseq": 3, "cat": -1, "yy": "all", "page": page}), re.S):
+            m = re.search(r'<td class="article_title">\s*<a href="[^"]*aseq=(\d+)[^"]*">(.*?)</a>', tr, re.S)
+            reg = re.search(r'class="article_write_dt">(\d{2})-(\d{2})-(\d{2})<', tr)
+            if m:
+                rows.append(board_row(self, f"gcube-{m[1]}", m[2], f"20{reg[1]}-{reg[2]}-{reg[3]}" if reg else "", "공지사항",
+                                      pinned="notice" in cls))
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        no = row["uid"].split("-", 1)[1]
+        url = f"{self.LIST}?bseq=3&mode=view&aseq={no}"
+        h = self._html({"bseq": 3, "mode": "view", "aseq": no})
+        i = h.find('class="article-content')
+        frag = cut(h[h.find(">", i) + 1:], ('<div class="article-copy-url"', '<div class="article-name-card"', '<div class="buttons"', "</form>")) if i >= 0 else ""
+        who = re.search(r'<em class="writer"><em>by</em>(.*?)</em>', h, re.S)
+        atts = [{"name": clean_ws(html.unescape(strip_tags(n))), "url": self.BASE + html.unescape(href)}
+                for href, n in re.findall(r'<a href="(/gears/lib/download\.ashx/[^"]+)">(.*?)</a>', h, re.S)]
+        return {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": uniq_docs(atts),
+                "contact": clean_ws(strip_tags(who[1])) if who else "", "body_images": body_images(frag, self.BASE)}
+
+
+class Ucepc:
+    """울산콘텐츠기업지원센터 사업공고·공지사항. 2026-07 이후 새 글이 없다(2026-11 확인). 고정 글이 매 쪽에 되풀이된다."""
+    key, label, DEPT = "ucepc", "울산콘텐츠기업지원센터", "울산광역시"
+    KEYWORDS = ""
+    SKIP_TITLE = GOV_SKIP
+    BASE = "https://www.ucepc.or.kr"
+    BOARDS = (("business", "사업공고"), ("notice", "공지사항"))
+
+    def list_page(self, page: int) -> list[dict]:
+        rows = []
+        for board, form in self.BOARDS:
+            h = get(f"{self.BASE}/front/notice/{board}", params={"page": page}, headers=UA_HEADERS).text
+            for cls, tr in re.findall(r"<tr([^>]*)>(.*?)</tr>", h[h.find('class="listTable"'):], re.S):
+                m = re.search(rf'<a href="/front/notice/{board}View\?bbs_no=(\d+)[^"]*"[^>]*>(.*?)</a>', tr, re.S)
+                reg = re.search(r"<td>(\d{4}-\d{2}-\d{2})</td>", tr)
+                if m:
+                    rows.append(board_row(self, f"ucepc-{board}-{m[1]}", m[2], reg[1] if reg else "", form, pinned="noti" in cls))
+        return rows
+
+    def detail(self, row: dict) -> dict:
+        _, board, no = row["uid"].split("-")
+        url = f"{self.BASE}/front/notice/{board}View?bbs_no={no}"
+        h = get(url, headers=UA_HEADERS).text
+        title = re.search(r'class="viewSubject">(.*?)</td>', h, re.S)
+        i = h.find('class="contents">')
+        frag = cut(h[h.find(">", i) + 1:], ("</td>",)) if i >= 0 else ""
+        atts = [{"name": clean_ws(html.unescape(strip_tags(n))),
+                 "url": f"{self.BASE}/front/notice/{board}FileDown?fileName={urllib.parse.quote(stored)}&num={num}"}
+                for stored, num, n in re.findall(r"fnUpfileDown\('([^']+)',\s*(\d+)\);\"[^>]*>(.*?)</a>", h, re.S)]
+        d = {"ntis_url": url, "source_url": "", "body": body_text(frag), "attachments": uniq_docs(atts), "contact": "",
+             "body_images": body_images(frag, self.BASE)}
+        if title:
+            d["title"] = clean_ws(html.unescape(strip_tags(title[1])))
+        return d
+
+
+SITES = {s.key: s for s in (Bizinfo, BizinfoOther, BizinfoCentral, Mss, Riia, Nipa, Cbist, Cbtp, Ctp, Cistep, Cfac, Ccon, Msit, Kstartup,
+                            Motie, Moe, Mois, Kiat, Nia, Rapa, SmartFactory, Gcube, Ucepc)}
+# 묶음: Discord에 이름 하나로 나간다. 판정 기록(seen.json)은 사이트별로 남는다
+GROUPS = {"chungbuk": ("충북", (Cbist, Riia, Cbtp)), "chungnam": ("충남", (Ctp, Cistep, Cfac, Ccon)),
+          "agency": ("부처·기관", (Motie, Moe, Mois, Kiat, Nia, Rapa, SmartFactory, Gcube, Ucepc))}
 
 
 # --------------------------------------------------------------------------- 공통
@@ -721,9 +1104,11 @@ def fetch_list(site, date_from: str, date_to: str, max_pages: int = 30) -> list[
         if not rows:
             break
         out.extend(rows)
-        # 상단 고정(공지) 글은 날짜가 오래돼도 매 페이지에 나올 수 있으므로 가장 최근 등록일 기준으로 판단
-        regs = [r["reg_date"] for r in rows if r["reg_date"]]
-        if regs and max(regs) < date_from:
+        # 상단 고정(공지) 글은 날짜가 오래돼도 매 페이지에 나올 수 있으므로 가장 최근 등록일 기준으로 판단.
+        # 고정 글로 표시된 줄(pinned)은 빼고 본다 — 고정 글만 있는 쪽에서 멈추면 그 뒤의 새 글을 놓친다.
+        # MIN_PAGES: 고정 글이 앞쪽 여러 쪽을 채우는 게시판(RAPA)은 그만큼은 끝까지 읽는다.
+        regs = [r["reg_date"] for r in rows if r["reg_date"] and not r.get("pinned")]
+        if page >= getattr(site, "MIN_PAGES", 1) and regs and max(regs) < date_from:
             break
         time.sleep(0.5)
     seen, uniq = set(), []
@@ -808,7 +1193,7 @@ def collect(site, a, out: Path, date_from: str, date_to: str, known: list) -> li
     if skip:
         before = len(rows)
         rows = [r for r in rows if not skip.search(r["title"])]
-        log(f"결과 공고 제외: {before - len(rows)}건")
+        log(f"결과·채용 등 신청 대상이 아닌 공고 제외: {before - len(rows)}건")
     if not a.no_seen:
         kept = []
         for r in rows:
@@ -818,17 +1203,21 @@ def collect(site, a, out: Path, date_from: str, date_to: str, known: list) -> li
             else:
                 kept.append(r)
         rows = kept
-    if site.KEYWORDS and not a.no_filter:
-        kw = load_keywords(Path(__file__).resolve().parent / site.KEYWORDS)
+    # 키워드 파일은 사이트 기본값(KEYWORDS)을 쓰되, 게시판마다 다른 사이트는 줄에 kwfile을 적어 둔다
+    # (부처·기관 묶음: 사업·공지 게시판은 bizinfo_keywords.txt, 입찰 게시판은 나라장터와 같은 g2b_keywords.txt)
+    kwfiles = sorted({f for r in rows if (f := r.get("kwfile", site.KEYWORDS))})
+    if kwfiles and not a.no_filter:
+        kws = {f: load_keywords(Path(__file__).resolve().parent / f) for f in kwfiles}
         kept = []
         for r in rows:
-            hit, bad, ok = match_keywords(r["title"], kw)
+            f = r.get("kwfile", site.KEYWORDS)
+            hit, bad, ok = match_keywords(r["title"], kws[f]) if f else ([], [], True)
             if ok or r.get("keep"):   # keep: 사이트가 키워드와 상관없이 넘기라고 표시한 공고 (K-Startup의 충북·충남)
                 r["keywords"] = hit
                 kept.append(r)
             else:
                 log(f"  키워드 제외: {r['title'][:50]}" + (f" (제외어 {', '.join(bad)})" if bad else ""))
-        log(f"키워드 필터({site.KEYWORDS}) 제외: {len(rows) - len(kept)}건")
+        log(f"키워드 필터({', '.join(kwfiles)}) 제외: {len(rows) - len(kept)}건")
         rows = kept
     log(f"상세 수집 대상 {len(rows)}건")
 

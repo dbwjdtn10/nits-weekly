@@ -76,6 +76,15 @@ python boards_collect.py --site kstartup --days 4 --out out/kstartup --dedupe ou
 - kstartup: https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do (K-Startup 사업공고 모집중 — 기업마당에 거의 올라오지 않는 창업기업 대상 공고). 하루 5~6건 중 지원분야가 행사·창업교육·멘토링/컨설팅/교육인 글은 자동으로 빠지고, 나머지는 `bizinfo_keywords.txt`로 공고명 1차 필터를 거칩니다(지역이 충북·충남인 공고는 키워드와 상관없이 들어옴). 남는 것은 하루 0~1건입니다. brief 본문 첫 줄에 `지역`·`대상`·`창업업력`이 있으니 2단계 자격 판정에 쓰세요 — 지역이 충북·전국이 아니고 신청대상이 그 지역 소재 기업으로 한정돼 있으면 부적합입니다(company_profile.md 6-4). 실패하면 한 번 재시도 후 건너뛰세요.
 - 기업마당은 충북·충남 기관(충북과기혁신원·테크노파크 등)과 중기부 공고를 재게시하므로 **1-c부터 이 순서대로** 실행해야 `--dedupe`가 앞 소스와 `state/seen.json`의 같은 공고를 걸러냅니다. 한 사이트가 실패해도 나머지는 진행하고 최종 응답에 적으세요.
 
+## 1-e. 부처·기관 게시판 수집 (묶음)
+```
+python boards_collect.py --group agency --days 4 --out out/agency --dedupe out out/g2b out/g2b_pre out/chungbuk out/chungnam out/mss out/bizinfo out/bizinfo_other out/nipa out/msit out/bizinfo_central out/kstartup
+```
+- 회사 문서 '정부과제 서칭 사이트'에 있는 나머지 9곳을 **한 폴더에 모읍니다** — Discord에는 `부처·기관` 한 덩어리로 나갑니다: 산업통상부 사업공고(www.motir.go.kr) · 교육부 사업공고·입찰알림(www.moe.go.kr) · 행정안전부 알립니다(www.mois.go.kr) · 한국산업기술진흥원 KIAT 사업공고·입찰공고(www.kiat.or.kr) · 한국지능정보사회진흥원 NIA 입찰공고·공지사항(www.nia.or.kr) · 한국전파진흥협회 RAPA 공지사항·입찰공고(www.rapa.or.kr) · 스마트공장 사업공고(www.smart-factory.kr) · 경북문화재단 콘텐츠진흥원 공지사항(gcube.or.kr:1021) · 울산콘텐츠기업지원센터 사업공고·공지사항(www.ucepc.or.kr)
+- 이 게시판들은 채용·포상·입법예고가 섞여 있고 R&D 공고는 NTIS에, 지원사업은 기업마당에, 입찰은 나라장터에도 올라옵니다. 그래서 **맨 마지막에 실행**해 `--dedupe`로 앞 소스와 겹치는 글을 빼고, 공고명 1차 필터(부처·공지 게시판은 `bizinfo_keywords.txt`, 입찰 게시판은 나라장터와 같은 `g2b_keywords.txt`, 경북·울산은 필터 없음)를 거칩니다. 남는 것은 하루 0~2건입니다.
+- 공고마다 어느 기관·게시판인지는 digest와 brief 머리의 `수행기관`·`분야`에 있습니다. `분야`가 **입찰공고**(KIAT·NIA·RAPA)인 글은 나라장터와 같은 방식으로(2절 4번), 나머지는 지원사업·공모 공고로 판정하세요. 경북·울산 공고는 신청 대상이 그 지역 소재 기업으로 한정돼 있으면 부적합입니다(company_profile.md 6-4).
+- **묶음 안에서 한 사이트가 실패해도 나머지는 수집됩니다.** 로그 끝에 `(수집 실패: 기관명)`이 붙으면 이 명령을 한 번 더 실행하고, 그래도 실패하면 그대로 진행하세요 — 실패한 기관 이름은 3절 요약 줄에 자동으로 붙습니다. 최종 응답에도 기관 이름과 오류 문구를 적으세요(클라우드에서 접속이 안 되는 기관을 사용자가 알아야 합니다).
+
 **수집 0건인 소스는 판정·링크 발송·seen 기록을 생략합니다.** 0건 여부는 3절의 한 줄 요약에만 반영되며(모든 소스가 0건이면 "신규 공고 없음"), 그 외 "0건" 알림은 보내지 마세요. 모든 소스가 **실패**(0건이 아니라 오류)한 경우에만 Discord로 오류 내용을 보내고 종료합니다.
 
 ## 2. 판정 (2단계 — company_profile.md 6-2절)
@@ -91,7 +100,7 @@ python boards_collect.py --site kstartup --days 4 --out out/kstartup --dedupe ou
 4. 나라장터 공고(`out/g2b/`)는 용역 입찰이므로 2단계에서 **"입찰공고서 참가자격 발췌"의 입찰참가자격(업종 등록·직접생산확인증명·면허·공장등록·지역)과 헤더의 `구매대상물품` 세부품명번호를 company_profile.md 5절과 하나씩 대조**합니다. "다음 자격을 모두 갖춘 자"처럼 AND로 요구하는 자격 중 하나라도 ❌ 미보유이면 부적합, `[담당자 기재]`로 미확인이면 조건부입니다. 기초금액·마감일은 정보로만 전달하고 판정 사유로 쓰지 않습니다.
 5. **사전규격**(`out/g2b_pre/`)도 나라장터와 같은 2단계로 판정합니다. 차이점: 입찰 마감·평가방식이 아직 없고, 참가자격이 규격서(제안요청서)에 있으면 company_profile.md 5절과 대조하지만 **규격서에 참가자격이 없으면 그 이유만으로 조건부로 내리지 마세요** — 방향·명확성이 확실하면 적합으로 둡니다 (본공고가 올라오면 수집기가 연결해 참가자격까지 다시 판정하므로). 규격서에 있는 AND 자격 중 ❌ 미보유가 있으면 부적합입니다.
 6. **충북·충남 묶음의 `분야`가 입찰공고인 공고**(충남테크노파크·천안과학산업진흥원·천안문화재단·충남콘텐츠진흥원 입찰 게시판)는 기관이 자체 게시한 용역·구매 입찰입니다. 나라장터 공고와 같은 방식(위 4번)으로 첨부 공고문·과업지시서의 참가자격을 company_profile.md 5절과 대조해 판정하세요. 같은 입찰이 나라장터에도 올라와 이미 판정했다면 수집 단계에서 제목 중복으로 빠집니다.
-7. 결과를 `out/results.json`(NTIS), `out/g2b/results.json`(나라장터), `out/g2b_pre/results.json`(나라장터 사전규격), `out/chungbuk/results.json`(충북), `out/chungnam/results.json`(충남), `out/mss/results.json`, `out/bizinfo/results.json`, `out/bizinfo_other/results.json`, `out/nipa/results.json`, `out/msit/results.json`(과기부), `out/bizinfo_central/results.json`, `out/kstartup/results.json`에 각각 다음 형식으로 저장하세요 (모든 uid 포함):
+7. 결과를 `out/results.json`(NTIS), `out/g2b/results.json`(나라장터), `out/g2b_pre/results.json`(나라장터 사전규격), `out/chungbuk/results.json`(충북), `out/chungnam/results.json`(충남), `out/mss/results.json`, `out/bizinfo/results.json`, `out/bizinfo_other/results.json`, `out/nipa/results.json`, `out/msit/results.json`(과기부), `out/bizinfo_central/results.json`, `out/kstartup/results.json`, `out/agency/results.json`(부처·기관)에 각각 다음 형식으로 저장하세요 (모든 uid 포함):
 ```json
 {
   "summary": "이번 수집분 총평 1~2문장 (예: 수집 7건 중 SW/AI 기업이 신청 가능한 공고 1건, 나머지는 대학·수요조사 위주)",
@@ -108,7 +117,7 @@ python boards_collect.py --site kstartup --days 4 --out out/kstartup --dedupe ou
   ]
 }
 ```
-- `budget`: 공고문에서 읽은 지원규모/예산/기초금액을 짧게 (예: "과제당 2억 이내", "총 10억", "기초금액 1.55억"). 수집기가 못 채운 NTIS·충북·충남·기업마당·중기부·NIPA·과기부·K-Startup 공고는 **반드시** 적을 것 — Discord 링크 줄에 표시된다.
+- `budget`: 공고문에서 읽은 지원규모/예산/기초금액을 짧게 (예: "과제당 2억 이내", "총 10억", "기초금액 1.55억"). 수집기가 못 채운 NTIS·충북·충남·기업마당·중기부·NIPA·과기부·K-Startup·부처·기관 공고는 **반드시** 적을 것 — Discord 링크 줄에 표시된다.
 - `score`: 0~100 제안 추천도. `conditions`: 신청자격·규모·마감·제출처 등 담당자가 바로 봐야 할 핵심 3~6개. `reason`: 1~3문장, 근거가 된 공고문 문구를 짧게 인용.
 
 ### 2-a. 적합 공고의 검토 카드 (`card`, 적합만 필수)
@@ -126,7 +135,7 @@ Discord에는 적합 공고가 **검토 카드**(제목 링크 · 마감 · 예�
 ## 3. 발송
 먼저 **한 줄 요약**을 보냅니다 (매일 1회, 적합 0건이어도 보냄 — routine이 돌았다는 표시). 수집 0건인 소스는 줄에서 자동으로 빠지고, 수집에 실패한 소스(`announcements.json` 없음)는 "⚠ 수집 실패"로, 묶음 안에서 일부 기관만 실패했으면 "충북 중 충북테크노파크 수집 실패"로 붙습니다:
 ```
-python daily_summary.py NTIS=out 나라장터=out/g2b 나라장터사전규격=out/g2b_pre 충북=out/chungbuk 충남=out/chungnam 중기부=out/mss "기업마당(충북·충남)=out/bizinfo" "기업마당(타지역)=out/bizinfo_other" NIPA=out/nipa 과기부=out/msit "기업마당(중앙부처)=out/bizinfo_central" K-Startup=out/kstartup
+python daily_summary.py NTIS=out 나라장터=out/g2b 나라장터사전규격=out/g2b_pre 충북=out/chungbuk 충남=out/chungnam 중기부=out/mss "기업마당(충북·충남)=out/bizinfo" "기업마당(타지역)=out/bizinfo_other" NIPA=out/nipa 과기부=out/msit "기업마당(중앙부처)=out/bizinfo_central" K-Startup=out/kstartup 부처·기관=out/agency
 ```
 그다음 적합 링크를 소스별로 보냅니다 (수집 1건 이상인 소스만 실행):
 ```
@@ -142,6 +151,7 @@ python discord_post.py --out out/nipa --title "NIPA"
 python discord_post.py --out out/msit --title "과기부"
 python discord_post.py --out out/bizinfo_central --title "기업마당(중앙부처)"
 python discord_post.py --out out/kstartup --title "K-Startup"
+python discord_post.py --out out/agency --title "부처·기관"
 ```
 - **적합이 0건인 소스도 실행하세요** — 조건부가 있으면 `discord_post.py`가 `**나라장터** — 적합 0건` 헤더와 조건부 txt 파일을 보냅니다. 적합·조건부가 하나도 없는 소스(부적합뿐이거나 판정 0건)는 알아서 아무것도 보내지 않습니다. 요약 줄 외에 따로 "0건" 알림을 보내지 마세요.
 - `DISCORD_WEBHOOK_URL` 환경변수를 사용합니다. **적합 공고만** `**나라장터** — 적합 N건` 한 줄 제목 아래 검토 카드(제목 링크 · 마감 · 예산 · 기관 + 2-a절 `card.make`)와 공고 첨부 전부를 묶은 zip으로, 이미 보낸 공고의 재공고는 "다시 올라온 공고" 한 줄로, **조건부는 텍스트 파일(조건부_기간.txt)로 첨부**됩니다 — 맨 위에 수집 공고일 범위, 공고마다 공고일·접수 기간 한 줄이 붙습니다.
@@ -151,7 +161,7 @@ python discord_post.py --out out/kstartup --title "K-Startup"
 ## 3-b. 적합 공고 엑셀 정리 (구글 드라이브)
 Discord 발송이 끝난 뒤, 적합 판정 **본공고**(사전규격 제외)를 구글 드라이브 폴더의 엑셀(`적합공고.xlsx`)에 한 줄씩 덧붙이고(사업명·등록일·마감일·만들것·첨부파일·공고내용) 공고 첨부를 공고별 폴더에 올립니다:
 ```
-python sheet_export.py out out/g2b out/chungbuk out/chungnam out/mss out/bizinfo out/bizinfo_other out/nipa out/msit out/bizinfo_central out/kstartup
+python sheet_export.py out out/g2b out/chungbuk out/chungnam out/mss out/bizinfo out/bizinfo_other out/nipa out/msit out/bizinfo_central out/kstartup out/agency
 ```
 - 수집하지 않았거나 판정이 없는 폴더는 알아서 건너뛰므로 **항상 이 명령 그대로** 실행하세요. `out/g2b_pre`는 넣지 않습니다. 적합이 0건이면 아무것도 하지 않습니다.
 - 엑셀에는 탭이 둘입니다 — 사람이 보는 `적합 공고`, 프로그램이 읽는 `공고내용`(아래 txt와 같은 글을 나눠 담음). 둘 다 스크립트가 알아서 채웁니다.
@@ -162,7 +172,7 @@ python sheet_export.py out out/g2b out/chungbuk out/chungnam out/mss out/bizinfo
 ## 3-c. 부적합 주간 파일 (Discord 대신 — 필수)
 부적합 공고는 Discord로 보내지 않고, 그 주 월요일~금요일 파일 하나(`부적합/부적합_<월요일>~<금요일>.txt`)에 날짜별로 모읍니다. 사용자는 회사 PC에서 `git pull`로 이 파일을 받아 봅니다:
 ```
-python rejected_weekly.py NTIS=out 나라장터=out/g2b 나라장터사전규격=out/g2b_pre 충북=out/chungbuk 충남=out/chungnam 중기부=out/mss "기업마당(충북·충남)=out/bizinfo" "기업마당(타지역)=out/bizinfo_other" NIPA=out/nipa 과기부=out/msit "기업마당(중앙부처)=out/bizinfo_central" K-Startup=out/kstartup
+python rejected_weekly.py NTIS=out 나라장터=out/g2b 나라장터사전규격=out/g2b_pre 충북=out/chungbuk 충남=out/chungnam 중기부=out/mss "기업마당(충북·충남)=out/bizinfo" "기업마당(타지역)=out/bizinfo_other" NIPA=out/nipa 과기부=out/msit "기업마당(중앙부처)=out/bizinfo_central" K-Startup=out/kstartup 부처·기관=out/agency
 ```
 - 수집하지 않았거나 판정이 없는 폴더는 알아서 건너뛰므로 **항상 이 명령 그대로**, Discord 발송이 실패했더라도 실행하세요. 오늘 판정한 부적합(제목 · 공고일·접수 기간 · 사유 · 링크)이 `state/rejected.json`(원본 기록)에 더해지고 이번 주 파일이 다시 만들어집니다. 같은 날 다시 실행해도 겹치지 않습니다.
 - 주간 파일을 직접 고치거나 이름을 바꾸지 마세요 — 스크립트가 매번 통째로 다시 만듭니다. 파일은 4절에서 state와 함께 커밋합니다.
@@ -183,6 +193,7 @@ python seen_state.py mark --out out/nipa --source nipa
 python seen_state.py mark --out out/msit --source msit
 python seen_state.py mark --out out/bizinfo_central --source bizinfo_central
 python seen_state.py mark --out out/kstartup --source kstartup
+python seen_state.py mark --out out/agency
 python seen_state.py prune --days 120
 python seen_state.py today > state/last_run.txt
 git add state/seen.json state/awards.json state/last_run.txt state/rejected.json 부적합

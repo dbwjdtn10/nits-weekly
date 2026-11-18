@@ -1,6 +1,6 @@
 # 정부 R&D·입찰·지원사업 공고 → X2R 적합성 판정 → Discord 일일 리포트
 
-평일 매일 아침, 최근 4일간 NTIS·나라장터·충북 기관(과기혁신원·지역혁신클러스터·테크노파크)·충남 기관(테크노파크·천안과학산업진흥원·천안문화재단·충남콘텐츠진흥원)·중기부·기업마당·NIPA·과기부·K-Startup에 등록된 공고를 수집하고 (이미 판정한 공고는 제외),
+평일 매일 아침, 최근 4일간 NTIS·나라장터·충북 기관(과기혁신원·지역혁신클러스터·테크노파크)·충남 기관(테크노파크·천안과학산업진흥원·천안문화재단·충남콘텐츠진흥원)·중기부·기업마당·NIPA·과기부·K-Startup·부처·기관 게시판(산업통상부·교육부·행안부·KIAT·NIA·RAPA·스마트공장·경북문화재단 콘텐츠진흥원·울산콘텐츠기업지원센터)에 등록된 공고를 수집하고 (이미 판정한 공고는 제외),
 `company_profile.md` 기준으로 X2R이 제안 가능한지 판정해 Discord 채널로 발송한다.
 
 ```
@@ -23,7 +23,7 @@
 | `g2b_prespec_collect.py` | 나라장터 **용역 사전규격**(본공고 전 제안요청서·과업지시서 초안) — 공공데이터포털 "조달청_나라장터 사전규격정보서비스"(같은 키, 활용신청 필요). 공고명 키워드 필터 후 규격서 첨부를 받아 과업 개요·참가자격 발췌. 사전규격 → 본공고 중앙값 8일 앞섬. 본공고가 올라오면 `g2b_collect.py`가 `bfSpecRgstNo`로 연결해 "본공고 올라옴"으로 표시 |
 | `awards_index.py` / `state/awards.json` | 나라장터 **용역 낙찰 이력 색인** (조달청_나라장터 낙찰정보서비스, 같은 키). API가 공고명 검색·한 달 초과 조회를 지원하지 않아 g2b_keywords 필터를 통과한 낙찰만 3년치 저장(`backfill` 최초 1회, `update` 매일). `lookup --title --agency`로 비슷한 사업의 낙찰사·낙찰률·참가 업체 수 조회 (Discord 카드에는 띄우지 않음) |
 | `cbist_collect.py` | 충북과학기술혁신원 사업공고(cbist.or.kr mncd=1131) 목록·상세 파서. routine은 `boards_collect.py --group chungbuk`으로 부르고, 단독 실행도 가능 |
-| `boards_collect.py` | 게시판형 공고 수집기. **지역 묶음** `--group chungbuk`(충북과기혁신원·충북 지역혁신클러스터·충북테크노파크) / `--group chungnam`(충남테크노파크·천안과학산업진흥원·천안문화재단·충남콘텐츠진흥원)은 여러 기관을 한 폴더에 모아 Discord에 `충북`·`충남`으로 나가게 한다(한 기관이 실패해도 나머지는 수집, 판정 기록은 기관별). `--site mss\|bizinfo_other\|bizinfo_central\|nipa\|msit\|kstartup`은 중기부·기업마당 지원사업(공공데이터포털 기업마당 API를 소관기관으로 나눔: 중기부 / 충북·충남 / 그 외 14개 시·도 / 중앙부처, 접수중 — 중기부 홈페이지 사업공고는 이 API에 모두 들어 있어 따로 받지 않음), NIPA, 과기부 사업공고, K-Startup 사업공고(모집중 — 행사·교육·멘토링 분야는 빼고 `bizinfo_keywords.txt`로 1차 필터, 충북·충남 공고는 필터 없이). 등록분 본문·첨부 수집, `--dedupe`로 다른 소스·seen.json과 제목이 같은 재게시 공고 제외 |
+| `boards_collect.py` | 게시판형 공고 수집기. **지역 묶음** `--group chungbuk`(충북과기혁신원·충북 지역혁신클러스터·충북테크노파크) / `--group chungnam`(충남테크노파크·천안과학산업진흥원·천안문화재단·충남콘텐츠진흥원)은 여러 기관을 한 폴더에 모아 Discord에 `충북`·`충남`으로 나가게 한다(한 기관이 실패해도 나머지는 수집, 판정 기록은 기관별). `--site mss\|bizinfo_other\|bizinfo_central\|nipa\|msit\|kstartup`은 중기부·기업마당 지원사업(공공데이터포털 기업마당 API를 소관기관으로 나눔: 중기부 / 충북·충남 / 그 외 14개 시·도 / 중앙부처, 접수중 — 중기부 홈페이지 사업공고는 이 API에 모두 들어 있어 따로 받지 않음), NIPA, 과기부 사업공고, K-Startup 사업공고(모집중 — 행사·교육·멘토링 분야는 빼고 `bizinfo_keywords.txt`로 1차 필터, 충북·충남 공고는 필터 없이). **부처·기관 묶음** `--group agency`는 회사 문서 '정부과제 서칭 사이트'의 나머지 9곳(산업통상부·교육부·행안부·KIAT·NIA·RAPA·스마트공장·경북문화재단 콘텐츠진흥원·울산콘텐츠기업지원센터)을 한 폴더에 모아 Discord에 `부처·기관`으로 내보낸다 — 채용·포상·입법예고·결과 공고는 제목으로 빼고, 부처·공지 게시판은 `bizinfo_keywords.txt`, 입찰 게시판은 `g2b_keywords.txt`로 1차 필터(경북·울산은 필터 없음), NIA의 `[조달입찰공고]`(나라장터 공고를 옮겨 실은 글)는 나라장터 수집기에 맡긴다. 등록분 본문·첨부 수집, `--dedupe`로 다른 소스·seen.json과 제목이 같은 재게시 공고 제외 |
 | `bizinfo_keywords.txt` | 기업마당 타지역(`bizinfo_other`) 공고명 1차 필터 포함/제외 키워드 |
 | `discord_post.py` | `out/results.json` + `out/announcements.json`을 Discord 웹훅으로 발송. 기본: **적합은 검토 카드**(만들 것·비슷한 실적·기간·평가·제출·확인할 점 — results.json `card`), 이미 보낸 적합 공고의 재공고는 "다시 올라온 공고" 한 줄, 조건부는 txt 첨부, **부적합은 보내지 않음** (`--format embed`로 상세 embed+첨부, `--send`로 대상 판정 변경, `--with-rejected`로 부적합 txt도 첨부) |
 | `rejected_weekly.py` / `state/rejected.json` / `부적합/` | **부적합 공고 주간 모음** — Discord 대신 그 주 월~금 파일 하나(`부적합/부적합_2026-11-16~2026-11-20.txt`)에 날짜 → 소스 순서로 제목·공고일·접수 기간·사유·링크를 적는다. routine이 평일마다 그날 판정분을 `state/rejected.json`(원본 기록, 4주 보관)에 더하고 파일을 통째로 다시 만들어 커밋하므로, 회사 PC에서는 `git pull`로 받는다 — `부적합_받기.bat`을 두 번 누르면 받아서 폴더를 연다(배치 파일은 한글 윈도우 cmd용 CP949 인코딩이라 UTF-8로 저장하면 깨진다). `--render --week 날짜`로 지난 주 파일 다시 만들기 |
@@ -69,10 +69,19 @@ claude.ai/code → 입력창 위 구름 아이콘(환경 이름) → Default 위
   www.msit.go.kr
   www.nipa.kr
   www.k-startup.go.kr
+  www.motir.go.kr
+  www.moe.go.kr
+  www.mois.go.kr
+  www.kiat.or.kr
+  www.nia.or.kr
+  www.rapa.or.kr
+  www.smart-factory.kr
+  gcube.or.kr
+  www.ucepc.or.kr
   script.google.com
   script.googleusercontent.com
   ```
-  (`*.cbtp.or.kr`은 충북테크노파크 산하 센터 게시판의 첨부용 — semicon·pbi 등. `www.bizinfo.go.kr`은 기업마당 첨부용인데 2026-10-20부터 클라우드에서 연결이 끊긴다. `www.mss.go.kr`은 같은 이유로, 그리고 기업마당 API가 중기부 홈페이지 공고를 포괄해서 쓰지 않는다.)
+  (`www.motir.go.kr`부터 `www.ucepc.or.kr`까지 9개는 부처·기관 묶음용 — 경북문화재단 콘텐츠진흥원은 `https://gcube.or.kr:1021`처럼 1021 포트로만 열려 클라우드에서 막힐 수 있다. `*.cbtp.or.kr`은 충북테크노파크 산하 센터 게시판의 첨부용 — semicon·pbi 등. `www.bizinfo.go.kr`은 기업마당 첨부용인데 2026-10-20부터 클라우드에서 연결이 끊긴다. `www.mss.go.kr`은 같은 이유로, 그리고 기업마당 API가 중기부 홈페이지 공고를 포괄해서 쓰지 않는다.)
 - **Environment variables**:
   ```
   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
