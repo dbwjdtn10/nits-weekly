@@ -23,13 +23,13 @@
   nia     : 한국지능정보사회진흥원 입찰공고·공지사항  https://www.nia.or.kr
   rapa    : 한국전파진흥협회 공지사항·입찰공고  https://www.rapa.or.kr
   smartfactory : 스마트공장 사업관리시스템 사업공고  https://www.smart-factory.kr
-  gcube   : 경북문화재단 콘텐츠진흥원 공지사항  https://gcube.or.kr:1021
+  gcube   : 경북문화재단 콘텐츠진흥원 공지사항  https://gcube.or.kr:1021  (이 PC에서만 — 클라우드에서는 연결이 끊겨 묶음에서 뺌)
   ucepc   : 울산콘텐츠기업지원센터 사업공고·공지사항  https://www.ucepc.or.kr
 
 묶음(--group): 여러 사이트를 한 폴더에 모아 Discord에 이름 하나로 나가게 한다.
   chungbuk : cbist + riia + cbtp      chungnam : ctp + cistep + cfac + ccon
-  agency   : motie + moe + mois + kiat + nia + rapa + smartfactory + gcube + ucepc  (Discord 제목 '부처·기관')
-             부처 게시판은 bizinfo_keywords.txt, 입찰 게시판은 g2b_keywords.txt로 공고명 1차 필터 (경북·울산은 필터 없음)
+  agency   : motie + moe + mois + kiat + nia + rapa + smartfactory + ucepc  (Discord 제목 '부처·기관')
+             부처 게시판은 bizinfo_keywords.txt, 입찰 게시판은 g2b_keywords.txt로 공고명 1차 필터 (울산은 필터 없음)
   묶음 안에서 한 사이트가 실패해도 나머지는 수집하고, 실패한 사이트는 announcements.json의 failed에 적는다.
 
 지정 기간(기본: 지난주 월~일)에 등록된 공고의 상세 본문과 첨부를 내려받아
@@ -1091,7 +1091,9 @@ SITES = {s.key: s for s in (Bizinfo, BizinfoOther, BizinfoCentral, Mss, Riia, Ni
                             Motie, Moe, Mois, Kiat, Nia, Rapa, SmartFactory, Gcube, Ucepc)}
 # 묶음: Discord에 이름 하나로 나간다. 판정 기록(seen.json)은 사이트별로 남는다
 GROUPS = {"chungbuk": ("충북", (Cbist, Riia, Cbtp)), "chungnam": ("충남", (Ctp, Cistep, Cfac, Ccon)),
-          "agency": ("부처·기관", (Motie, Moe, Mois, Kiat, Nia, Rapa, SmartFactory, Gcube, Ucepc))}
+          # 경북문화재단(Gcube)은 1021 포트로만 열리는데 클라우드에서는 그 연결이 끊긴다(2026-11-18 클라우드 시험).
+          # 묶음에 두면 매일 "수집 실패"가 떠서 뺐다 — 이 PC에서는 --site gcube로 볼 수 있다.
+          "agency": ("부처·기관", (Motie, Moe, Mois, Kiat, Nia, Rapa, SmartFactory, Ucepc))}
 
 
 # --------------------------------------------------------------------------- 공통

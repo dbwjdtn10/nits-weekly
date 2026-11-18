@@ -80,9 +80,9 @@ python boards_collect.py --site kstartup --days 4 --out out/kstartup --dedupe ou
 ```
 python boards_collect.py --group agency --days 4 --out out/agency --dedupe out out/g2b out/g2b_pre out/chungbuk out/chungnam out/mss out/bizinfo out/bizinfo_other out/nipa out/msit out/bizinfo_central out/kstartup
 ```
-- 회사 문서 '정부과제 서칭 사이트'에 있는 나머지 9곳을 **한 폴더에 모읍니다** — Discord에는 `부처·기관` 한 덩어리로 나갑니다: 산업통상부 사업공고(www.motir.go.kr) · 교육부 사업공고·입찰알림(www.moe.go.kr) · 행정안전부 알립니다(www.mois.go.kr) · 한국산업기술진흥원 KIAT 사업공고·입찰공고(www.kiat.or.kr) · 한국지능정보사회진흥원 NIA 입찰공고·공지사항(www.nia.or.kr) · 한국전파진흥협회 RAPA 공지사항·입찰공고(www.rapa.or.kr) · 스마트공장 사업공고(www.smart-factory.kr) · 경북문화재단 콘텐츠진흥원 공지사항(gcube.or.kr:1021) · 울산콘텐츠기업지원센터 사업공고·공지사항(www.ucepc.or.kr)
-- 이 게시판들은 채용·포상·입법예고가 섞여 있고 R&D 공고는 NTIS에, 지원사업은 기업마당에, 입찰은 나라장터에도 올라옵니다. 그래서 **맨 마지막에 실행**해 `--dedupe`로 앞 소스와 겹치는 글을 빼고, 공고명 1차 필터(부처·공지 게시판은 `bizinfo_keywords.txt`, 입찰 게시판은 나라장터와 같은 `g2b_keywords.txt`, 경북·울산은 필터 없음)를 거칩니다. 남는 것은 하루 0~2건입니다.
-- 공고마다 어느 기관·게시판인지는 digest와 brief 머리의 `수행기관`·`분야`에 있습니다. `분야`가 **입찰공고**(KIAT·NIA·RAPA)인 글은 나라장터와 같은 방식으로(2절 4번), 나머지는 지원사업·공모 공고로 판정하세요. 경북·울산 공고는 신청 대상이 그 지역 소재 기업으로 한정돼 있으면 부적합입니다(company_profile.md 6-4).
+- 회사 문서 '정부과제 서칭 사이트'에 있는 나머지 8곳을 **한 폴더에 모읍니다** — Discord에는 `부처·기관` 한 덩어리로 나갑니다: 산업통상부 사업공고(www.motir.go.kr) · 교육부 사업공고·입찰알림(www.moe.go.kr) · 행정안전부 알립니다(www.mois.go.kr) · 한국산업기술진흥원 KIAT 사업공고·입찰공고(www.kiat.or.kr) · 한국지능정보사회진흥원 NIA 입찰공고·공지사항(www.nia.or.kr) · 한국전파진흥협회 RAPA 공지사항·입찰공고(www.rapa.or.kr) · 스마트공장 사업공고(www.smart-factory.kr) · 울산콘텐츠기업지원센터 사업공고·공지사항(www.ucepc.or.kr)
+- 이 게시판들은 채용·포상·입법예고가 섞여 있고 R&D 공고는 NTIS에, 지원사업은 기업마당에, 입찰은 나라장터에도 올라옵니다. 그래서 **맨 마지막에 실행**해 `--dedupe`로 앞 소스와 겹치는 글을 빼고, 공고명 1차 필터(부처·공지 게시판은 `bizinfo_keywords.txt`, 입찰 게시판은 나라장터와 같은 `g2b_keywords.txt`, 울산은 필터 없음)를 거칩니다. 남는 것은 하루 0~2건입니다.
+- 공고마다 어느 기관·게시판인지는 digest와 brief 머리의 `수행기관`·`분야`에 있습니다. `분야`가 **입찰공고**(KIAT·NIA·RAPA)인 글은 나라장터와 같은 방식으로(2절 4번), 나머지는 지원사업·공모 공고로 판정하세요. 울산 공고는 신청 대상이 그 지역 소재 기업으로 한정돼 있으면 부적합입니다(company_profile.md 6-4).
 - **묶음 안에서 한 사이트가 실패해도 나머지는 수집됩니다.** 로그 끝에 `(수집 실패: 기관명)`이 붙으면 이 명령을 한 번 더 실행하고, 그래도 실패하면 그대로 진행하세요 — 실패한 기관 이름은 3절 요약 줄에 자동으로 붙습니다. 최종 응답에도 기관 이름과 오류 문구를 적으세요(클라우드에서 접속이 안 되는 기관을 사용자가 알아야 합니다).
 
 **수집 0건인 소스는 판정·링크 발송·seen 기록을 생략합니다.** 0건 여부는 3절의 한 줄 요약에만 반영되며(모든 소스가 0건이면 "신규 공고 없음"), 그 외 "0건" 알림은 보내지 마세요. 모든 소스가 **실패**(0건이 아니라 오류)한 경우에만 Discord로 오류 내용을 보내고 종료합니다.
