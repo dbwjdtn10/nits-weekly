@@ -22,9 +22,10 @@
   DISCORD_WEBHOOK_URL   (필수)
 사용:
   python discord_post.py --out out                 # 적합만 카드 + 공고 첨부 전부(HWP·PDF·서식)를 zip 하나로
-                                                   # 조건부·부적합은 판정별 txt 파일로 첨부
+                                                   # 조건부는 txt 파일로 첨부, 부적합은 보내지 않는다
+                                                   # (부적합은 rejected_weekly.py가 주간 파일로 모음)
   python discord_post.py --out out --dry-run       # 콘솔 출력만
-  ※ 적합이 0건이어도 조건부·부적합이 있으면 헤더 + txt 파일은 발송. 판정 0건이면 아무것도 보내지 않음
+  ※ 적합이 0건이어도 조건부가 있으면 헤더 + txt 파일은 발송. 적합·조건부가 없으면 아무것도 보내지 않음
   python discord_post.py --out out --format embed  # 상세 embed + 첨부파일 형식
 """
 from __future__ import annotations
@@ -262,9 +263,10 @@ def main() -> int:
     ap.add_argument("--out", default="out")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-files", action="store_true")
-    ap.add_argument("--send", default="적합", help="링크로 보낼 판정 (콤마 구분). 기본: 적합 — 조건부·부적합은 판정별 txt 파일로 첨부")
+    ap.add_argument("--send", default="적합", help="링크로 보낼 판정 (콤마 구분). 기본: 적합 — 조건부는 txt 파일로 첨부")
     ap.add_argument("--format", default="links", choices=["links", "embed"], help="links: 공고당 한 줄 링크(기본) / embed: 상세 embed + 첨부")
-    ap.add_argument("--no-rejected", action="store_true", help="부적합 목록 파일 첨부 생략")
+    ap.add_argument("--with-rejected", action="store_true",
+                    help="부적합 목록도 txt 파일로 첨부. 기본은 보내지 않음 — 부적합은 rejected_weekly.py가 주간 파일로 모은다")
     ap.add_argument("--send-empty", action="store_true", help="판정 0건이어도 헤더 발송. 기본은 발송 생략")
     ap.add_argument("--webhook", default=os.environ.get("DISCORD_WEBHOOK_URL", ""))
     ap.add_argument("--title", default="NTIS 국가R&D통합공고 일일 리포트", help="헤더 제목")
@@ -297,11 +299,11 @@ def main() -> int:
     unjudged = [u for u in items if u not in results]
 
     # 링크로도 파일로도 보낼 게 없으면 아무것도 보내지 않는다 (일일 실행이라 빈 리포트가 채널을 덮지 않도록).
-    # 적합이 0건이어도 조건부·부적합이 있으면 헤더(적합 0건) + 판정별 txt 파일은 보낸다.
+    # 적합이 0건이어도 조건부가 있으면 헤더(적합 0건) + 조건부 txt 파일은 보낸다. 부적합뿐인 소스는 보내지 않는다.
     attachable = [r for r in judged if r.get("verdict") not in send_set
-                  and not (r.get("verdict") == "부적합" and a.no_rejected)]
+                  and (r.get("verdict") != "부적합" or a.with_rejected)]
     if not picked and not reposts and not attachable and not a.send_empty:
-        log(f"발송 생략: 판정 0건 (수집 {len(items)}건)")
+        log(f"발송 생략: 보낼 판정 없음 (수집 {len(items)}건, 부적합 {len(rejected)}건은 Discord에 보내지 않음)")
         return 0
 
     # 1) 헤더 — 한 줄로 짧게 (날짜·전체 건수는 daily_summary.py의 요약 줄이 담당)
@@ -355,12 +357,12 @@ def main() -> int:
                 changes = r.get("changes") or ""
                 lines.append(f"• [{trunc(it.get('title','?'), 80)}]({it['ntis_url']}) — {short_date(it['repost_of'].get('judged_at', ''))} 발송분\n"
                              f"　{meta_line(it, r)}" + (f"\n　변경: {trunc(changes, 160)}" if changes else ""))
-        # 링크로 보내지 않은 판정(조건부·부적합)은 메시지에 줄을 차지하지 않도록 판정별 텍스트 파일로 만들어
-        # 마지막 메시지에 첨부 (클릭하면 Discord 안에서 열림)
+        # 링크로 보내지 않은 조건부는 메시지에 줄을 차지하지 않도록 텍스트 파일로 만들어
+        # 마지막 메시지에 첨부 (클릭하면 Discord 안에서 열림). 부적합은 --with-rejected를 줄 때만 첨부
         files: list[Path] = []
         for verdict in ("조건부", "부적합"):
             rs = [r for r in judged if r.get("verdict") == verdict and verdict not in send_set]
-            if not rs or (verdict == "부적합" and a.no_rejected):
+            if not rs or (verdict == "부적합" and not a.with_rejected):
                 continue
             f = out / f"{verdict}_{date_from}_{date_to}.txt"
             grouped = any(it.get("source") != ann.get("source") for it in items.values())   # 묶음은 공고의 source가 사이트 이름
@@ -380,12 +382,13 @@ def main() -> int:
                 buf = ""
         if buf or not chunks:
             chunks.append((buf, []))
-        if files:   # 조건부·부적합 txt는 마지막 메시지에
+        if files:   # 조건부 txt는 마지막 메시지에
             c, docs = chunks[-1]
             chunks[-1] = (c, docs + files)
         for c, fs in chunks:
             send(a.webhook, {"content": c, "allowed_mentions": {"parse": []}}, fs or None, dry=a.dry_run)
-        log(f"완료: 적합 {len(picked)}건 + 재공고 {len(reposts)}건 발송 (첨부파일: 조건부 {n_cond}, 부적합 {len(rejected)})")
+        log(f"완료: 적합 {len(picked)}건 + 재공고 {len(reposts)}건 발송 (첨부파일: 조건부 {n_cond}건"
+            + (f", 부적합 {len(rejected)}건)" if a.with_rejected else f" / 부적합 {len(rejected)}건은 보내지 않음)"))
         return 0
 
     send(a.webhook, {"content": head, "allowed_mentions": {"parse": []}}, dry=a.dry_run)
@@ -415,8 +418,8 @@ def main() -> int:
         send(a.webhook, {"embeds": [embed], "allowed_mentions": {"parse": []}}, files or None, dry=a.dry_run)
         log(f"  전송: [{r['verdict']}] {it['title'][:40]} (첨부 {len(files)})")
 
-    # 3) 부적합 요약(간략 목록)
-    if rejected and not a.no_rejected:
+    # 3) 부적합 요약(간략 목록) — --with-rejected를 줄 때만
+    if rejected and a.with_rejected:
         lines = ["**⚪ 부적합으로 판정된 공고**"]
         for r in rejected:
             it = items.get(str(r["uid"]), {})

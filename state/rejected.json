@@ -1,0 +1,730 @@
+{
+ "2026-11-16": {
+  "NTIS": [
+   {
+    "uid": "1282515",
+    "title": "2027년도 소재부품기술개발사업 소부장 특화단지 R&D 기술수요조사 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.ntis.go.kr/rndgate/eg/un/ra/view.do?roRndUid=1282515&flag=rndList"
+   },
+   {
+    "uid": "1282682",
+    "title": "수출형 방산체계 고도화를 위한AI 방산 R&D 품목발굴을 위한 기술수요조사",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.ntis.go.kr/rndgate/eg/un/ra/view.do?roRndUid=1282682&flag=rndList"
+   },
+   {
+    "uid": "1282732",
+    "title": "2027년 제2차 용역연구개발과제 주관연구기관 공모 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.ntis.go.kr/rndgate/eg/un/ra/view.do?roRndUid=1282732&flag=rndList"
+   },
+   {
+    "uid": "1282796",
+    "title": "2027년도 소재부품장비 양산성능평가지원사업 총괄주관연구개발기관 모집 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.ntis.go.kr/rndgate/eg/un/ra/view.do?roRndUid=1282796&flag=rndList"
+   },
+   {
+    "uid": "1282912",
+    "title": "「K-문샷 우주데이터센터 비즈니스 모델·민관협력 체계 도출 및 경제성 분석 연구」 정책연구과제 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.ntis.go.kr/rndgate/eg/un/ra/view.do?roRndUid=1282912&flag=rndList"
+   },
+   {
+    "uid": "1282913",
+    "title": "2026년 에너지국제공동연구사업 한-미 에너지협력센터 구축확산",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.ntis.go.kr/rndgate/eg/un/ra/view.do?roRndUid=1282913&flag=rndList"
+   },
+   {
+    "uid": "1282915",
+    "title": "「PD 중심 국가 미션형 R&D 추진을 위한 법·제도 개선방안 연구」정책연구과제 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.ntis.go.kr/rndgate/eg/un/ra/view.do?roRndUid=1282915&flag=rndList"
+   },
+   {
+    "uid": "1282916",
+    "title": "「AI 과학자 독립 검증·재현 인프라 구축사업 기획 연구」 정책연구과제 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.ntis.go.kr/rndgate/eg/un/ra/view.do?roRndUid=1282916&flag=rndList"
+   },
+   {
+    "uid": "1282955",
+    "title": "「K-문샷 미션 지향형 연구개발성과의 활용·확산 등 후속연계 기획 지원방안 연구」 정책연구과제 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.ntis.go.kr/rndgate/eg/un/ra/view.do?roRndUid=1282955&flag=rndList"
+   },
+   {
+    "uid": "1282957",
+    "title": "「신약개발 AI-ready 학습과 벤치마크 데이터 구축사업 기획 연구」 정책연구과제 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.ntis.go.kr/rndgate/eg/un/ra/view.do?roRndUid=1282957&flag=rndList"
+   },
+   {
+    "uid": "1282958",
+    "title": "「초고효율 다중접합 태양전지 실증센터 구축사업 기획연구」 정책연구과제 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.ntis.go.kr/rndgate/eg/un/ra/view.do?roRndUid=1282958&flag=rndList"
+   },
+   {
+    "uid": "1282959",
+    "title": "「K-문샷 휴머노이드 미션 달성을 위한 신규 R&D 사업 기획 연구」 정책연구과제 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.ntis.go.kr/rndgate/eg/un/ra/view.do?roRndUid=1282959&flag=rndList"
+   },
+   {
+    "uid": "1283030",
+    "title": "「K-문샷 BCI미션 신규사업 기획을 위한 영장류 기능 뇌지도 구축 기획 연구」 정책연구과제 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.ntis.go.kr/rndgate/eg/un/ra/view.do?roRndUid=1283030&flag=rndList"
+   }
+  ],
+  "나라장터": [
+   {
+    "uid": "R26BK01826952-000",
+    "title": "「디지털 제품 여권(DPP) 설계 (DPP 기술 개발)」 용역 (광주첨단 스마트그린 AX실증산단 구축사업)",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01826952&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01827120-000",
+    "title": "AX-ECO LCA 플랫폼 GS1 표준 연계 설계·기획 연구용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01827120&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01828288-000",
+    "title": "해양경찰KICS 수사지원 AI 모델 개발을 위한 정보화전략계획(ISP) 수립 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01828288&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01829604-000",
+    "title": "26~27-N-교육훈련용 AI 조교 체계개발 실증",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01829604&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01830471-000",
+    "title": "노암예술터널 미디어아트 콘텐츠 공모전 운영 및 제작 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01830471&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01830552-000",
+    "title": "2027년 서울특별시교육청 전자도서관 구독형 전자책 서비스 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01830552&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01830636-000",
+    "title": "로보틱 햅틱 케인 LLM 시스템 구축 지원",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01830636&bidPbancOrd=000"
+   }
+  ],
+  "나라장터 사전규격": [
+   {
+    "uid": "R26BD00299771",
+    "title": "한국어능력시험(TOPIK) 통합형 AI 디지털 평가플랫폼 구축정보화전략계획(ISP) 수립 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00299771"
+   },
+   {
+    "uid": "R26BD00299810",
+    "title": "풍납동 토성 안내센터 전시콘텐츠 설계 및 제작·설치 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00299810"
+   },
+   {
+    "uid": "R26BD00299820",
+    "title": "ROSMan 활용 피지컬 AI 실전 교육 운영 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00299820"
+   },
+   {
+    "uid": "R26BD00299831",
+    "title": "포항국가산단 AX 마스터플랜 수립 연구용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00299831"
+   },
+   {
+    "uid": "R26BD00300103",
+    "title": "iCADPlus를 활용한 디지털트윈 환경구축",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00300103"
+   },
+   {
+    "uid": "R26BD00300134",
+    "title": "AI 융합형 수산물 품질안전관리 시스템 구축 ISP",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00300134"
+   },
+   {
+    "uid": "R26BD00300145",
+    "title": "두류젊코 미디어 콘텐츠 제작 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00300145"
+   },
+   {
+    "uid": "R26BD00300234",
+    "title": "피지컬AI 기반 건설로보틱스 활성화 방안 연구",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00300234"
+   },
+   {
+    "uid": "R26BD00300316",
+    "title": "2027년 지휘역량 강화센터 훈련 시뮬레이터 유지관리",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00300316"
+   }
+  ],
+  "중기부": [
+   {
+    "uid": "PBLN_000000000127907",
+    "title": "2027년 서울 창신 의류제조 공동인프라 운영기관 모집 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127907"
+   }
+  ],
+  "기업마당(타지역)": [
+   {
+    "uid": "PBLN_000000000127903",
+    "title": "[전북] 2026년 6차 전북지역기술혁신허브 맞춤형 기술지원 참여기업 모집 공고(전북지역기술혁신허브 비R&D 지원사업)",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127903"
+   },
+   {
+    "uid": "PBLN_000000000127909",
+    "title": "[전남광주] 2026년 아태 AI 특화지구조성 올인원 AI 사업화지원(투자지원 및 해외수요처발굴지원 프로그램) 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127909"
+   }
+  ],
+  "과기부": [
+   {
+    "uid": "3186916",
+    "title": "2026년도 제5차 과학기술분야 연구기획과제 공모",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.msit.go.kr/bbs/view.do?sCode=user&mPid=121&mId=311&bbsSeqNo=100&nttSeqNo=3186916"
+   },
+   {
+    "uid": "3186917",
+    "title": "연구보안 전담기관 지정계획 재공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.msit.go.kr/bbs/view.do?sCode=user&mPid=121&mId=311&bbsSeqNo=100&nttSeqNo=3186917"
+   }
+  ],
+  "기업마당(중앙부처)": [
+   {
+    "uid": "PBLN_000000000127911",
+    "title": "2026년 4차 KICET 기술이전조건부사업화지원사업 수혜기업 모집 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127911"
+   }
+  ]
+ },
+ "2026-11-17": {
+  "나라장터": [
+   {
+    "uid": "R26BK01831838-000",
+    "title": "[앵커사업 1-2 원주] AR 대피경로 안내 시스템 UI/UX 개선 및 기능 구현",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01831838&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01831922-000",
+    "title": "연암공과대학교 2026학년도 AI기반 차세대 통합출결관리시스템 고도화 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01831922&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01831967-000",
+    "title": "데이터 기반 AI 생육의사결정 플랫폼 구축",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01831967&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01832144-000",
+    "title": "[혁신]도서관 정보시스템 고도화 및 모바일·AI 서비스 구축 업체 선정(확대공고)",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01832144&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01832222-000",
+    "title": "AI 학사․진로 상담 챗봇 구축 입찰 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01832222&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01832355-000",
+    "title": "2027년 웹진 한국영화 운영 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01832355&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01832626-000",
+    "title": "순천향대학교 AI의료융합데이터센터 플랫폼 구축 사업(재공고)",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01832626&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01832685-000",
+    "title": "2027년 도로관리시스템 유지관리 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01832685&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01832716-000",
+    "title": "강원후평 스마트그린산업단지 통합관제센터 구축사업 산업단지 방범 및 센터시스템 구축용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01832716&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01833175-000",
+    "title": "26~27-N-생성형 AI 기반 지능형 작전지원체계 구축",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01833175&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01833178-000",
+    "title": "서남권 메가 프로젝트의 안정적 용수 확보를 위한 과학기술 지원방안 연구 : 반도체 클러스터 및 피지컬 AI를 중심으로",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01833178&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01833281-000",
+    "title": "레미콘 D-MES 구축 및 AX 품질정보 Platform 개발",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01833281&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01833306-000",
+    "title": "[제2026-국제산학28(재)호] 2026년 경희대학교 미래기술학교 프로젝트 운영 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01833306&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01833643-000",
+    "title": "한림농협 스마트 APC 관리시스템 구축용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01833643&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01833828-000",
+    "title": "2027년 관악구 구민 AI 리터러시 및 정보화 교육 운영 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01833828&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01833968-000",
+    "title": "고용노동부 2026년 정규 제4차 정책연구과제 입찰 재공고(1건, AI를 활용한 구직자 프로파일링 도구 고도화 등 연구)",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01833968&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01834035-000",
+    "title": "제4회 전국동시조합장선거 투표관리 교육영상 제작",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01834035&bidPbancOrd=000"
+   }
+  ],
+  "나라장터 사전규격": [
+   {
+    "uid": "R26BD00300587",
+    "title": "남원시 춘향VR체험관 체험장비 정비 사업",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00300587"
+   },
+   {
+    "uid": "R26BD00300685",
+    "title": "온디바이스 형태의 AI 의사결정체계 개발 실증 사업",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00300685"
+   },
+   {
+    "uid": "R26BD00300692",
+    "title": "[앵커추진팀] 화성시 제조업 산업안전 실태조사(FGI) 용역 입찰공고(나라장터 일반경쟁입찰)",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00300692"
+   },
+   {
+    "uid": "R26BD00300697",
+    "title": "(긴급) AI 기반 인천문화유산 애니메이션 콘텐츠 제작 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00300697"
+   },
+   {
+    "uid": "R26BD00300891",
+    "title": "「지역거점 AX 혁신 기술개발 사업」 AX 혁신 R&D센터 구축 설계 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00300891"
+   }
+  ],
+  "충남": [
+   {
+    "uid": "ccon-bsnt-2126",
+    "title": "[공고] 열전사 및 스티커 프린터 활용 AI 굿즈 제작 과정 모집 공고",
+    "period": "",
+    "agency": "충남콘텐츠진흥원",
+    "reason": "",
+    "url": "https://ccon.kr/bbs/board.php?bo_table=bsnt&wr_id=2126"
+   }
+  ],
+  "기업마당(충북·충남)": [
+   {
+    "uid": "PBLN_000000000127932",
+    "title": "[충남] 2026년 충남도 홍보관 전시 및 안테나숍 입점품평회 모집 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127932"
+   }
+  ],
+  "기업마당(타지역)": [
+   {
+    "uid": "PBLN_000000000127931",
+    "title": "[경기] 스페인 바르셀로나 정보통신 전시회(MWC 2027) 경기도관 참가기업 모집 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127931"
+   },
+   {
+    "uid": "PBLN_000000000127939",
+    "title": "[제주] AI 데이터 기반 위기징후 알람모형 지원 사업 시행 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127939"
+   }
+  ]
+ },
+ "2026-11-18": {
+  "나라장터": [
+   {
+    "uid": "R26BK01826004-000",
+    "title": "동국대학교 공통교양 AI리터러시 영역 계열별 기초 교과목 신규개발 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01826004&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01831668-000",
+    "title": "두류젊코 미디어 콘텐츠 제작 용역(긴급)",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01831668&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01834348-000",
+    "title": "방과후학교 AI 강사 역량 강화 원격연수 콘텐츠 개발",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01834348&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01834642-000",
+    "title": "기획예산처 AI·데이터 기반 정보보호 고도화 전략계획 수립 컨설팅 사업",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01834642&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01834925-000",
+    "title": "2027년 김포시 SNS 콘텐츠 제작 및 운영 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01834925&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01835035-000",
+    "title": "우석대학교 대학 교수 및 직원 맞춤형 AI 에이전트(Agent) 실무 혁신 역량강화 교육 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01835035&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01835285-000",
+    "title": "ROSMan 활용 피지컬 AI 실전 교육 운영 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01835285&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01835788-000",
+    "title": "2027년 공공보건의료 이러닝 콘텐츠 개발 및 운영",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01835788&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01836582-001",
+    "title": "[대학혁신] 인천대학교 AI 전환(AX) 전략 및 실행체계 수립 컨설팅 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01836582&bidPbancOrd=001"
+   },
+   {
+    "uid": "R26BK01836843-000",
+    "title": "카자흐스탄 크즐오르다 대학교 인공지능 단과대학 내 VR 실습실 장비 설치사업 구축",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01836843&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01837164-000",
+    "title": "생성형 AI 이용자 참여 플랫폼 콘텐츠 개발",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01837164&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01837221-000",
+    "title": "국민건강보험공단 2027년 이러닝 콘텐츠 개발",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01837221&bidPbancOrd=000"
+   },
+   {
+    "uid": "R26BK01837279-000",
+    "title": "통신서비스 활용 및 피해예방 교육 콘텐츠 제작·발송",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01837279&bidPbancOrd=000"
+   }
+  ],
+  "나라장터 사전규격": [
+   {
+    "uid": "R26BD00301333",
+    "title": "국민인공지능서비스혁신추진단 온프레미스SW 개발 환경 구성 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00301333"
+   },
+   {
+    "uid": "R26BD00301494",
+    "title": "첨단뿌리공정·AI융합 마이크로디그리 교육콘텐츠 고도화 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00301494"
+   },
+   {
+    "uid": "R26BD00301614",
+    "title": "제주대학교 생성형 AI 멀티 LLM 플랫폼 이용권 및 크래딧 구입",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00301614"
+   },
+   {
+    "uid": "R26BD00301677",
+    "title": "충북대학교 양자 컴퓨팅센터 ‘퀀텀AI스쿨’ LMS 및 양자컴퓨터 클라우드 시스템 구축 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00301677"
+   },
+   {
+    "uid": "R26BD00301701",
+    "title": "순천제일대학교 디지털 트윈 고도화 2026-10호",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00301701"
+   },
+   {
+    "uid": "R26BD00301723",
+    "title": "2027년 하남시 디지털트윈 공간정보 플랫폼 유지관리",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00301723"
+   },
+   {
+    "uid": "R26BD00301824",
+    "title": "AI-HEMS/CEMS 운영플랫폼 개발 및 구축 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00301824"
+   },
+   {
+    "uid": "R26BD00301833",
+    "title": "한림성심대학교 스마트 교육정보시스템 구축 사업",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00301833"
+   },
+   {
+    "uid": "R26BD00301842",
+    "title": "[AI앵커] AI+X 융합전공 고도화 연구 용역",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo=R26BD00301842"
+   }
+  ],
+  "중기부": [
+   {
+    "uid": "PBLN_000000000127951",
+    "title": "[경기] 2026년 경기지방중소벤처기업청 산학연협력 유공 포상 신청 모집 연장 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127951"
+   }
+  ],
+  "기업마당(타지역)": [
+   {
+    "uid": "PBLN_000000000127965",
+    "title": "2026년 청년창업가 정주여건 지원 창업기업 모집 공고(대구 AI 활용 청년 기술창업 지원사업)",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127965"
+   }
+  ],
+  "기업마당(중앙부처)": [
+   {
+    "uid": "PBLN_000000000127964",
+    "title": "2027년 실증시험 지원사업 후보과제 모집 공고",
+    "period": "",
+    "agency": "",
+    "reason": "",
+    "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127964"
+   }
+  ]
+ }
+}
