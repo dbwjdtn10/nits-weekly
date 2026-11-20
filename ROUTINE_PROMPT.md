@@ -96,7 +96,7 @@ python boards_collect.py --group agency --days 4 --out out/agency --dedupe out o
    - **2단계 (자격)**: 1단계를 통과한 공고만 brief를 **끝까지**(첨부 발췌·참가자격) 읽고 company_profile.md 5절·6-4절과 대조합니다. brief가 길면 offset을 나눠 읽으세요. brief만으로 자격 판단이 불가능한 경우에만 `text/<uid>.md`에서 해당 섹션을 grep으로 찾아 읽으세요 (전문을 통째로 읽지 마세요).
    - 본문이 `(본문이 이미지로만 게시됨 — 첨부 공고문 참조)`인 공고(충남·충북 테크노파크, 충남콘텐츠진흥원 등)는 1단계에서도 바로 아래 첨부 발췌(공고문)까지 읽고 방향·명확성을 판단하세요. 읽을 수 있는 첨부가 없어 brief에 `## 본문 이미지`와 파일 경로가 있으면 **Read 도구로 그 이미지를 열어** 공고 내용을 읽고 판정합니다(제목만으로 판정하지 말 것). 이미지로도 내용을 확인할 수 없으면 `조건부` + `action`에 "원문 직접 확인 필요"를 적으세요.
    - 제안요청서·과업지시서가 첨부되어 있는데 brief 맨 아래 `⚠ 읽지 못한 첨부`에 있어(스캔본 등) 과업·자격을 확정할 수 없으면 `조건부`로 두고, `action`에 "원문 첨부(<파일명>) 직접 확인 필요"라고 적으세요.
-3. 판정은 `적합` / `조건부` / `부적합` 셋 중 하나입니다. **Discord에는 적합만 링크로 나가고 조건부는 파일로만 첨부, 부적합은 Discord에 나가지 않고 주간 파일(3-c절)에만 모이므로**, 적합은 방향·명확성·자격이 모두 확실한 것만 주세요. 애매하면 `조건부`. 부적합의 `reason`은 주간 파일에 그대로 실리니 지금처럼 근거 문구를 인용해 적으세요.
+3. 판정은 `적합` / `조건부` / `부적합` 셋 중 하나입니다. **Discord에는 적합만 나가고 조건부·부적합은 Discord에 나가지 않고 주간 파일(3-c절)에만 모이므로**, 적합은 방향·명확성·자격이 모두 확실한 것만 주세요. 애매하면 `조건부`. 조건부의 `reason`·`conditions`·`action`·`budget`과 부적합의 `reason`은 주간 파일에 그대로 실리니 지금처럼 근거 문구를 인용해 적으세요.
 4. 나라장터 공고(`out/g2b/`)는 용역 입찰이므로 2단계에서 **"입찰공고서 참가자격 발췌"의 입찰참가자격(업종 등록·직접생산확인증명·면허·공장등록·지역)과 헤더의 `구매대상물품` 세부품명번호를 company_profile.md 5절과 하나씩 대조**합니다. "다음 자격을 모두 갖춘 자"처럼 AND로 요구하는 자격 중 하나라도 ❌ 미보유이면 부적합, `[담당자 기재]`로 미확인이면 조건부입니다. 기초금액·마감일은 정보로만 전달하고 판정 사유로 쓰지 않습니다.
 5. **사전규격**(`out/g2b_pre/`)도 나라장터와 같은 2단계로 판정합니다. 차이점: 입찰 마감·평가방식이 아직 없고, 참가자격이 규격서(제안요청서)에 있으면 company_profile.md 5절과 대조하지만 **규격서에 참가자격이 없으면 그 이유만으로 조건부로 내리지 마세요** — 방향·명확성이 확실하면 적합으로 둡니다 (본공고가 올라오면 수집기가 연결해 참가자격까지 다시 판정하므로). 규격서에 있는 AND 자격 중 ❌ 미보유가 있으면 부적합입니다.
 6. **충북·충남 묶음의 `분야`가 입찰공고인 공고**(충남테크노파크·천안과학산업진흥원·천안문화재단·충남콘텐츠진흥원 입찰 게시판)는 기관이 자체 게시한 용역·구매 입찰입니다. 나라장터 공고와 같은 방식(위 4번)으로 첨부 공고문·과업지시서의 참가자격을 company_profile.md 5절과 대조해 판정하세요. 같은 입찰이 나라장터에도 올라와 이미 판정했다면 수집 단계에서 제목 중복으로 빠집니다.
@@ -153,9 +153,9 @@ python discord_post.py --out out/bizinfo_central --title "기업마당(중앙부
 python discord_post.py --out out/kstartup --title "K-Startup"
 python discord_post.py --out out/agency --title "부처·기관"
 ```
-- **적합이 0건인 소스도 실행하세요** — 조건부가 있으면 `discord_post.py`가 `**나라장터** — 적합 0건` 헤더와 조건부 txt 파일을 보냅니다. 적합·조건부가 하나도 없는 소스(부적합뿐이거나 판정 0건)는 알아서 아무것도 보내지 않습니다. 요약 줄 외에 따로 "0건" 알림을 보내지 마세요.
-- `DISCORD_WEBHOOK_URL` 환경변수를 사용합니다. **적합 공고만** `**나라장터** — 적합 N건` 한 줄 제목 아래 검토 카드(제목 링크 · 마감 · 예산 · 기관 + 2-a절 `card.make`)와 공고 첨부 전부를 묶은 zip으로, 이미 보낸 공고의 재공고는 "다시 올라온 공고" 한 줄로, **조건부는 텍스트 파일(조건부_기간.txt)로 첨부**됩니다 — 맨 위에 수집 공고일 범위, 공고마다 공고일·접수 기간 한 줄이 붙습니다.
-- **부적합은 Discord에 보내지 않습니다**(2026-11-18 사용자 요청). `--with-rejected`를 붙이거나 부적합 목록을 따로 메시지로 보내지 마세요 — 3-c절의 주간 파일로만 모읍니다.
+- 수집 1건 이상인 소스는 모두 실행하세요 — 적합이 없는 소스는 `discord_post.py`가 알아서 아무것도 보내지 않습니다. 요약 줄 외에 따로 "0건" 알림을 보내지 마세요.
+- `DISCORD_WEBHOOK_URL` 환경변수를 사용합니다. **적합 공고만** `**나라장터** — 적합 N건` 한 줄 제목 아래 검토 카드(제목 링크 · 마감 · 예산 · 기관 + 2-a절 `card.make`)와 공고 첨부 전부를 묶은 zip으로, 이미 보낸 공고의 재공고는 "다시 올라온 공고" 한 줄로 나갑니다.
+- **조건부·부적합은 Discord에 보내지 않습니다**(부적합 2026-11-18, 조건부 2026-11-20 사용자 요청). `--with-conditional`·`--with-rejected`를 붙이거나 목록을 따로 메시지로 보내지 마세요 — 3-c절의 주간 파일로만 모읍니다.
 - 전송 로그에 오류가 있으면 `--no-files`로 한 번 더 시도하세요.
 
 ## 3-b. 적합 공고 엑셀 정리 (구글 드라이브)
@@ -169,17 +169,17 @@ python sheet_export.py out out/g2b out/chungbuk out/chungnam out/mss out/bizinfo
 - 환경변수 `DRIVE_WEBAPP_URL`이 없으면 "건너뜀"만 출력하고 끝납니다 — 정상입니다. 이 주소는 비밀이므로 출력하거나 최종 응답에 적지 마세요.
 - 오류로 끝나면 한 번 더 실행하고(이미 올라간 줄·파일은 다시 올리지 않음), 그래도 실패하면 4절로 넘어가되 최종 응답에 "엑셀 정리 실패"와 오류 문구를 적으세요.
 
-## 3-c. 부적합 주간 파일 (Discord 대신 — 필수)
-부적합 공고는 Discord로 보내지 않고, 그 주 월요일~금요일 파일 하나(`부적합/부적합_<월요일>~<금요일>.txt`)에 날짜별로 모읍니다. 사용자는 회사 PC에서 `git pull`로 이 파일을 받아 봅니다:
+## 3-c. 조건부·부적합 주간 파일 (Discord 대신 — 필수)
+조건부·부적합 공고는 Discord로 보내지 않고, 판정별로 그 주 월요일~금요일 파일 하나(`조건부/조건부_<월요일>~<금요일>.txt`, `부적합/부적합_<월요일>~<금요일>.txt`)에 날짜별로 모읍니다. 사용자는 원할 때 회사 PC에서 `git pull`로 이 파일을 받아 봅니다:
 ```
-python rejected_weekly.py NTIS=out 나라장터=out/g2b 나라장터사전규격=out/g2b_pre 충북=out/chungbuk 충남=out/chungnam 중기부=out/mss "기업마당(충북·충남)=out/bizinfo" "기업마당(타지역)=out/bizinfo_other" NIPA=out/nipa 과기부=out/msit "기업마당(중앙부처)=out/bizinfo_central" K-Startup=out/kstartup 부처·기관=out/agency
+python verdict_weekly.py NTIS=out 나라장터=out/g2b 나라장터사전규격=out/g2b_pre 충북=out/chungbuk 충남=out/chungnam 중기부=out/mss "기업마당(충북·충남)=out/bizinfo" "기업마당(타지역)=out/bizinfo_other" NIPA=out/nipa 과기부=out/msit "기업마당(중앙부처)=out/bizinfo_central" K-Startup=out/kstartup 부처·기관=out/agency
 ```
-- 수집하지 않았거나 판정이 없는 폴더는 알아서 건너뛰므로 **항상 이 명령 그대로**, Discord 발송이 실패했더라도 실행하세요. 오늘 판정한 부적합(제목 · 공고일·접수 기간 · 사유 · 링크)이 `state/rejected.json`(원본 기록)에 더해지고 이번 주 파일이 다시 만들어집니다. 같은 날 다시 실행해도 겹치지 않습니다.
+- 수집하지 않았거나 판정이 없는 폴더는 알아서 건너뛰므로 **항상 이 명령 그대로**, Discord 발송이 실패했더라도 실행하세요. 오늘 판정한 조건부(제목 · 공고일·접수 기간 · 사유 · 확인할 것 · 제안 액션 · 금액 · 링크)는 `state/conditional.json`에, 부적합(제목 · 공고일·접수 기간 · 사유 · 링크)은 `state/rejected.json`(원본 기록)에 더해지고 이번 주 파일이 다시 만들어집니다. 같은 날 다시 실행해도 겹치지 않습니다.
 - 주간 파일을 직접 고치거나 이름을 바꾸지 마세요 — 스크립트가 매번 통째로 다시 만듭니다. 파일은 4절에서 state와 함께 커밋합니다.
-- 실패하면 한 번 더 실행하고, 그래도 실패하면 4절로 넘어가되 최종 응답에 "부적합 주간 파일 실패"와 오류 문구를 적으세요.
+- 실패하면 한 번 더 실행하고, 그래도 실패하면 4절로 넘어가되 최종 응답에 "주간 파일 실패"와 오류 문구를 적으세요.
 
 ## 4. 판정 기록 저장 (필수 — `seen_state.py mark`는 수집 1건 이상인 소스만)
-다음 실행에서 같은 공고를 다시 판정하지 않도록, 이번에 판정한 공고를 `state/seen.json`에 기록하고, 낙찰 색인 `state/awards.json`, 오늘 실행 완료 표시 `state/last_run.txt`(같은 날 다시 실행돼도 중복 발송하지 않도록 — 모든 소스가 0건이어도 반드시 기록), 3-c절의 부적합 기록 `state/rejected.json`과 `부적합/` 폴더까지 **이것들만** 커밋·푸시하세요:
+다음 실행에서 같은 공고를 다시 판정하지 않도록, 이번에 판정한 공고를 `state/seen.json`에 기록하고, 낙찰 색인 `state/awards.json`, 오늘 실행 완료 표시 `state/last_run.txt`(같은 날 다시 실행돼도 중복 발송하지 않도록 — 모든 소스가 0건이어도 반드시 기록), 3-c절의 기록 `state/conditional.json`·`state/rejected.json`과 `조건부/`·`부적합/` 폴더까지 **이것들만** 커밋·푸시하세요:
 ```
 python seen_state.py mark --out out --source ntis
 python seen_state.py mark --out out/g2b --source g2b
@@ -196,11 +196,11 @@ python seen_state.py mark --out out/kstartup --source kstartup
 python seen_state.py mark --out out/agency
 python seen_state.py prune --days 120
 python seen_state.py today > state/last_run.txt
-git add state/seen.json state/awards.json state/last_run.txt state/rejected.json 부적합
+git add state/seen.json state/awards.json state/last_run.txt state/conditional.json state/rejected.json 조건부 부적합
 git diff --cached --quiet || git -c user.name="ntis-routine" -c user.email="routine@x2r.kr" commit -m "state: $(python seen_state.py today) 판정 기록"
 git pull --rebase origin main && git push origin main
 ```
 - `out/` 등 다른 파일은 절대 커밋하지 마세요. push가 실패하면 `git pull --rebase` 후 한 번 더 시도하고, 그래도 실패하면 최종 응답에 명시하세요.
 
 ## 5. 마무리
-- 최종 응답에 소스별 수집 건수(제외 건수 포함), 판정 분포, 발송 결과, 엑셀 정리 결과(추가·고침 줄 수 또는 건너뜀·실패), 부적합 주간 파일 결과(오늘 더한 건수·파일 이름), seen.json 커밋 여부를 요약하세요.
+- 최종 응답에 소스별 수집 건수(제외 건수 포함), 판정 분포, 발송 결과, 엑셀 정리 결과(추가·고침 줄 수 또는 건너뜀·실패), 조건부·부적합 주간 파일 결과(판정별 오늘 더한 건수·파일 이름), seen.json 커밋 여부를 요약하세요.

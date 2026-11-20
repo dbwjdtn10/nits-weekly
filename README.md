@@ -7,9 +7,9 @@
 ┌ Claude Code 클라우드 routine (평일 09:00 KST, cron 0 0 * * 1-5 UTC) ┐
 │ 1. ntis / g2b / boards(충북·충남 묶음, mss·bizinfo·nipa·kstartup) → out/*/brief/<uid>.md │
 │ 2. Claude가 company_profile.md 기준으로 판정 → out/results.json       │
-│ 3. python discord_post.py   → Discord 웹훅 (적합 카드 + 조건부 txt)     │
+│ 3. python discord_post.py   → Discord 웹훅 (적합 카드만)                │
 │ 3-b. python sheet_export.py → 구글 드라이브 엑셀에 적합 본공고 한 줄씩  │
-│ 3-c. python rejected_weekly.py → 부적합/부적합_월~금.txt (주간 모음)    │
+│ 3-c. python verdict_weekly.py → 조건부/·부적합/ 월~금.txt (주간 모음)   │
 │ 4. python seen_state.py mark → state/seen.json 커밋 (재판정 방지)       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -25,8 +25,8 @@
 | `cbist_collect.py` | 충북과학기술혁신원 사업공고(cbist.or.kr mncd=1131) 목록·상세 파서. routine은 `boards_collect.py --group chungbuk`으로 부르고, 단독 실행도 가능 |
 | `boards_collect.py` | 게시판형 공고 수집기. **지역 묶음** `--group chungbuk`(충북과기혁신원·충북 지역혁신클러스터·충북테크노파크) / `--group chungnam`(충남테크노파크·천안과학산업진흥원·천안문화재단·충남콘텐츠진흥원)은 여러 기관을 한 폴더에 모아 Discord에 `충북`·`충남`으로 나가게 한다(한 기관이 실패해도 나머지는 수집, 판정 기록은 기관별). `--site mss\|bizinfo_other\|bizinfo_central\|nipa\|msit\|kstartup`은 중기부·기업마당 지원사업(공공데이터포털 기업마당 API를 소관기관으로 나눔: 중기부 / 충북·충남 / 그 외 14개 시·도 / 중앙부처, 접수중 — 중기부 홈페이지 사업공고는 이 API에 모두 들어 있어 따로 받지 않음), NIPA, 과기부 사업공고, K-Startup 사업공고(모집중 — 행사·교육·멘토링 분야는 빼고 `bizinfo_keywords.txt`로 1차 필터, 충북·충남 공고는 필터 없이). **부처·기관 묶음** `--group agency`는 회사 문서 '정부과제 서칭 사이트'의 나머지 8곳(산업통상부·교육부·행안부·KIAT·NIA·RAPA·스마트공장·울산콘텐츠기업지원센터)을 한 폴더에 모아 Discord에 `부처·기관`으로 내보낸다 — 채용·포상·입법예고·결과 공고는 제목으로 빼고, 부처·공지 게시판은 `bizinfo_keywords.txt`, 입찰 게시판은 `g2b_keywords.txt`로 1차 필터(울산은 필터 없음), NIA의 `[조달입찰공고]`(나라장터 공고를 옮겨 실은 글)는 나라장터 수집기에 맡긴다. 등록분 본문·첨부 수집, `--dedupe`로 다른 소스·seen.json과 제목이 같은 재게시 공고 제외 |
 | `bizinfo_keywords.txt` | 기업마당 타지역(`bizinfo_other`) 공고명 1차 필터 포함/제외 키워드 |
-| `discord_post.py` | `out/results.json` + `out/announcements.json`을 Discord 웹훅으로 발송. 기본: **적합은 검토 카드**(만들 것·비슷한 실적·기간·평가·제출·확인할 점 — results.json `card`), 이미 보낸 적합 공고의 재공고는 "다시 올라온 공고" 한 줄, 조건부는 txt 첨부, **부적합은 보내지 않음** (`--format embed`로 상세 embed+첨부, `--send`로 대상 판정 변경, `--with-rejected`로 부적합 txt도 첨부) |
-| `rejected_weekly.py` / `state/rejected.json` / `부적합/` | **부적합 공고 주간 모음** — Discord 대신 그 주 월~금 파일 하나(`부적합/부적합_2026-11-16~2026-11-20.txt`)에 날짜 → 소스 순서로 제목·공고일·접수 기간·사유·링크를 적는다. routine이 평일마다 그날 판정분을 `state/rejected.json`(원본 기록, 4주 보관)에 더하고 파일을 통째로 다시 만들어 커밋하므로, 회사 PC에서는 `git pull`로 받는다 — `부적합_받기.bat`을 두 번 누르면 받아서 폴더를 연다(배치 파일은 한글 윈도우 cmd용 CP949 인코딩이라 UTF-8로 저장하면 깨진다). `--render --week 날짜`로 지난 주 파일 다시 만들기 |
+| `discord_post.py` | `out/results.json` + `out/announcements.json`을 Discord 웹훅으로 발송. 기본: **적합은 검토 카드**(만들 것·비슷한 실적·기간·평가·제출·확인할 점 — results.json `card`), 이미 보낸 적합 공고의 재공고는 "다시 올라온 공고" 한 줄, **조건부·부적합은 보내지 않음** (`--format embed`로 상세 embed+첨부, `--send`로 대상 판정 변경, `--with-conditional`·`--with-rejected`로 그 판정 목록 txt 첨부) |
+| `verdict_weekly.py` / `state/conditional.json`·`state/rejected.json` / `조건부/`·`부적합/` | **조건부·부적합 공고 주간 모음** — Discord 대신 판정별로 그 주 월~금 파일 하나(`조건부/조건부_2026-11-16~2026-11-20.txt`, `부적합/부적합_…txt`)에 날짜 → 소스 순서로 제목·공고일·접수 기간·사유·링크(조건부는 확인할 것·제안 액션·금액까지)를 적는다. routine이 평일마다 그날 판정분을 `state/conditional.json`·`state/rejected.json`(원본 기록, 4주 보관)에 더하고 파일을 통째로 다시 만들어 커밋하므로, 회사 PC에서는 원할 때 `git pull`로 받는다 — `조건부_받기.bat`·`부적합_받기.bat`을 두 번 누르면 받아서 그 폴더를 연다(배치 파일은 한글 윈도우 cmd용 CP949 인코딩이라 UTF-8로 저장하면 깨진다). `--render --week 날짜`로 지난 주 파일 다시 만들기 |
 | `daily_summary.py` | 매일 Discord 맨 앞 한 줄 요약 (`📋 10/01 공고 확인 — 나라장터 45 · NTIS 4건 중 적합 2건`). 적합 0건이어도 발송해 routine 동작 여부를 알 수 있게 함 |
 | `sheet_export.py` | Discord 발송 뒤 **적합 본공고(사전규격 제외)를 구글 드라이브 폴더의 엑셀 `적합공고.xlsx`에 한 줄씩** 덧붙인다 (사업명·등록일·마감일·만들것·첨부파일·공고내용 — 공고내용 칸에는 `공고내용.txt` 링크를 글자 그대로 적어, 프로그램이 칸의 글자만 읽어도 찾을 수 있게 한다). 엑셀은 내려받아 줄만 붙이고 같은 파일로 다시 올리므로 링크가 그대로이고 사람이 고친 내용도 남는다. 드라이브 폴더 안 `첨부파일` 폴더에 공고마다 폴더를 만들어 첨부를 올리고 첨부파일 칸에 그 폴더 링크를 건다(첨부를 못 받은 공고는 공고 원문 링크). 재공고는 새 줄 대신 기존 줄의 마감일을 고친다. 각 공고 폴더에는 `공고내용.txt`도 넣는다 — 공고 기본 정보·첨부 목록(수록 상태)·과업지시서/제안요청서/공고문 본문 전체(판정용 4만 자 상한 없이, 양식·법령류는 이름만, 같은 문서의 PDF/HWP 중복은 하나만). HWP를 읽지 못하는 프로그램(제안서 초안 작성 등)이 이 파일만 읽으면 된다. 표는 한 행을 한 줄(`칸 | 칸 | 칸`)로 적는다. 같은 글을 엑셀의 둘째 탭 `공고내용`에도 3만 자씩 나눠 담는다(열: 사업명·공고 링크·순번·내용 — 엑셀 한 칸이 32,767자까지라 나누며, 순번대로 이으면 txt와 같다). 엑셀 파일 하나만 받아도 프로그램이 본문을 읽을 수 있게 하기 위한 것. 추출 방식을 고친 뒤에는 `--refresh-text`로 이미 올라간 공고의 txt를 다시 만들어 바꿔 올린다. 사전규격을 거친 본공고에 과업 문서가 없으면 사전규격 규격서를 받아 `(사전규격)` 표시로 함께 넣는다. `DRIVE_WEBAPP_URL`이 없으면 건너뜀. `--local 폴더`로 드라이브 없이 모양 확인 |
 | `drive_webapp.gs` | 위 스크립트가 호출하는 Google Apps Script 웹앱 원본 — 아래 "구글 드라이브 연결" 참고 |
